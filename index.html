@@ -130,22 +130,25 @@
       ctx.fillText(`${side} Kick!`, side === 'Left' ? 50 : 450, 50);
     }
 
-    function drawSkeleton(pose) {
-      const kpMap = {};
-      pose.keypoints.forEach(kp => {
-        kpMap[kp.name] = kp;
-      });
+    function drawSkeleton(kpMap) {
       ctx.strokeStyle = 'green';
       ctx.lineWidth = 3;
       for (const [kp1, kp2] of connections) {
         const keypoint1 = kpMap[kp1];
         const keypoint2 = kpMap[kp2];
-        if (keypoint1 && keypoint2 &&
-            keypoint1.score > 0.3 && keypoint2.score > 0.3) {
+        if (keypoint1 && keypoint2 && keypoint1.score > 0.3 && keypoint2.score > 0.3) {
           ctx.beginPath();
           ctx.moveTo(keypoint1.x, keypoint1.y);
           ctx.lineTo(keypoint2.x, keypoint2.y);
           ctx.stroke();
+        }
+      }
+      for (const name in kpMap) {
+        const kp = kpMap[name];
+        if (kp.score > 0.3) {
+          ctx.fillStyle = 'white';
+          ctx.font = '12px Arial';
+          ctx.fillText(name, kp.x + 5, kp.y + 5);
         }
       }
     }
@@ -170,11 +173,13 @@
 
       if (!poses[0]) return;
       const pose = poses[0];
-      drawSkeleton(pose);
+      const kpMap = {};
+      pose.keypoints.forEach(kp => { kpMap[kp.name] = kp; });
+      drawSkeleton(kpMap);
       const vRef = verticalRef(pose);
 
-      detectKick(leftFoot, pose.keypoints.find(k => k.name === 'left_hip'), pose.keypoints.find(k => k.name === 'left_ankle'), vRef, 'Left');
-      detectKick(rightFoot, pose.keypoints.find(k => k.name === 'right_hip'), pose.keypoints.find(k => k.name === 'right_ankle'), vRef, 'Right');
+      detectKick(leftFoot, kpMap['left_hip'], kpMap['left_ankle'], vRef, 'Left');
+      detectKick(rightFoot, kpMap['right_hip'], kpMap['right_ankle'], vRef, 'Right');
     }
 
     window.onload = init;
