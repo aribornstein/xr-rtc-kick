@@ -144,6 +144,17 @@
 
             setupWebRTC();
 
+            // Create canvas for keypoints drawing
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.style.position = 'absolute';
+            canvas.style.top = video.offsetTop + 'px';
+            canvas.style.left = video.offsetLeft + 'px';
+            canvas.style.zIndex = 10; // Ensure it's on top
+            video.parentNode.appendChild(canvas);
+            const ctx = canvas.getContext('2d');
+
             setInterval(async () => {
                 const poses = await detector.estimatePoses(video);
                 if (poses.length === 0) return;
@@ -185,6 +196,10 @@
                 // Update previous ankle positions
                 previousLeftAnkleY = leftAnkle.y;
                 previousRightAnkleY = rightAnkle.y;
+
+                // Clear canvas and draw keypoints
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                drawKeypoints(keypoints, ctx); // Pass the context to drawKeypoints
             }, 100);
         }
 
@@ -242,6 +257,18 @@
                 dataChannel.send(JSON.stringify(kick));
                 console.log("Sent kick data:", kick);
             }
+        }
+
+        function drawKeypoints(keypoints, ctx) {
+            keypoints.forEach(keypoint => {
+                const { x, y, score } = keypoint;
+                if (score > 0.5) { // Only draw if confidence is high
+                    ctx.beginPath();
+                    ctx.arc(x, y, 5, 0, 2 * Math.PI); // Draw a circle
+                    ctx.fillStyle = 'red';
+                    ctx.fill();
+                }
+            });
         }
     </script>
 </body>
