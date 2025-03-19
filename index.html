@@ -127,7 +127,9 @@
     function indicateKick(side) {
       ctx.fillStyle = 'yellow';
       ctx.font = 'bold 30px Arial';
-      ctx.fillText(`${side} Kick!`, side === 'Left' ? 50 : 450, 50);
+      ctx.textAlign = side === 'Left' ? 'left' : 'right';
+      ctx.textBaseline = 'top';
+      ctx.fillText(`${side} Kick!`, side === 'Left' ? 10 : canvas.width - 10, 10);
     }
 
     function drawSkeleton(kpMap, scaleX, scaleY) {
