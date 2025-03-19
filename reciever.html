@@ -169,9 +169,18 @@
       if (signalingData) {
         try {
           const data = JSON.parse(signalingData);
+          if (!data || (typeof data !== 'object')) {
+            console.error("Signaling data is not a valid JSON object:", signalingData);
+            alert("Invalid signaling data: Not a JSON object.");
+            return;
+          }
+
           if (data.sdp) {
             // Set the remote description with the received offer
-            peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp))
+            peerConnection.setRemoteDescription(new RTCSessionDescription({
+                type: data.type, // Use the 'type' from the signaling data
+                sdp: data.sdp
+              }))
               .then(() => {
                 console.log("Remote SDP set");
                 if (data.sdp.type === "offer") {
@@ -193,10 +202,13 @@
             peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate))
               .then(() => console.log("Added remote ICE candidate"))
               .catch(console.error);
+          } else {
+            console.error("Signaling data missing 'sdp' or 'candidate' property:", data);
+            alert("Invalid signaling data: Missing 'sdp' or 'candidate'.");
           }
         } catch (error) {
           console.error("Error parsing signaling data:", error);
-          alert("Invalid signaling data format.");
+          alert("Invalid signaling data format: " + error.message);
         }
       }
     });
