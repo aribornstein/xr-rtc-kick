@@ -125,7 +125,7 @@
     }
 
     function indicateKick(side) {
-      ctx.fillStyle = 'red';
+      ctx.fillStyle = side === 'Left' ? 'red' : 'blue';
       ctx.font = 'bold 30px Arial';
       ctx.textAlign = side === 'Left' ? 'left' : 'right';
       ctx.textBaseline = 'top';
