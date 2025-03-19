@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Pose Detection Test</title>
+  <title>Pose Detection with Kick Detection</title>
   <!-- TensorFlow.js and Pose Detection libraries -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
@@ -39,7 +39,7 @@
   </style>
 </head>
 <body>
-  <h1>Continuous Pose Detection (MoveNet)</h1>
+  <h1>Continuous Pose Detection (MoveNet) + Kick Detection</h1>
   <p id="status">Loading model...</p>
 
   <div id="videoContainer">
@@ -51,6 +51,16 @@
     let video, canvas, ctx;
     let detector;
     let animationId;
+
+    // -- Kick Detection Globals --
+    let previousLeftAnkleY = null;
+    let previousRightAnkleY = null;
+    let kickCooldownFrames = 0;
+
+    // Constants for thresholds
+    const MAX_COOLDOWN = 10;          // frames to wait after a kick is detected
+    const KICK_VELOCITY_THRESHOLD = 10; // how quickly the ankle must move up
+    const KICK_HEIGHT_THRESHOLD = 0.3;  // fraction of body height foot must rise
 
     const statusEl = document.getElementById('status');
 
@@ -107,6 +117,86 @@
       });
     }
 
+    // -- Kick detection logic --
+    function checkForKick(pose) {
+      if (kickCooldownFrames > 0) {
+        // If we're on cooldown, decrement and return
+        kickCooldownFrames--;
+        return;
+      }
+
+      // Find keypoints we care about
+      const leftAnkle = pose.keypoints.find(k => k.name === 'left_ankle');
+      const rightAnkle = pose.keypoints.find(k => k.name === 'right_ankle');
+      const leftHip   = pose.keypoints.find(k => k.name === 'left_hip');
+      const rightHip  = pose.keypoints.find(k => k.name === 'right_hip');
+
+      // Make sure ankles exist & have decent detection confidence
+      if (!leftAnkle || !rightAnkle || leftAnkle.score < 0.3 || rightAnkle.score < 0.3) return;
+
+      // For an optional height-based threshold, we need a reference for the body height:
+      let bodyHeight = 0;
+      if (leftHip && rightHip) {
+        if (leftHip.score > 0.3 && rightHip.score > 0.3) {
+          const avgHipY = (leftHip.y + rightHip.y) / 2;
+          const avgAnkleY = (leftAnkle.y + rightAnkle.y) / 2;
+          bodyHeight = Math.abs(avgAnkleY - avgHipY);
+        }
+      }
+
+      // Current Y positions (lower Y means foot is higher in the image if top=0)
+      const currentLeftY = leftAnkle.y;
+      const currentRightY = rightAnkle.y;
+
+      // If this is the very first frame, just store the ankles and return
+      if (previousLeftAnkleY === null || previousRightAnkleY === null) {
+        previousLeftAnkleY = currentLeftY;
+        previousRightAnkleY = currentRightY;
+        return;
+      }
+
+      // Calculate velocity (previous - current). If it's positive => foot moved up
+      const leftVelocity = previousLeftAnkleY - currentLeftY;
+      const rightVelocity = previousRightAnkleY - currentRightY;
+
+      // Check left foot
+      if (leftVelocity > KICK_VELOCITY_THRESHOLD) {
+        // Also check if foot is above some fraction of body height
+        if (bodyHeight > 0) {
+          const footAboveThreshold = (leftHip && leftHip.score > 0.3)
+            ? (leftHip.y - leftAnkle.y) > (KICK_HEIGHT_THRESHOLD * bodyHeight)
+            : true; // if we can’t measure height, ignore
+          if (footAboveThreshold) {
+            console.log("Left kick detected!");
+            kickCooldownFrames = MAX_COOLDOWN;
+          }
+        } else {
+          console.log("Left kick detected (velocity only)!");
+          kickCooldownFrames = MAX_COOLDOWN;
+        }
+      }
+
+      // Check right foot
+      if (rightVelocity > KICK_VELOCITY_THRESHOLD) {
+        if (bodyHeight > 0) {
+          const footAboveThreshold = (rightHip && rightHip.score > 0.3)
+            ? (rightHip.y - rightAnkle.y) > (KICK_HEIGHT_THRESHOLD * bodyHeight)
+            : true;
+          if (footAboveThreshold) {
+            console.log("Right kick detected!");
+            kickCooldownFrames = MAX_COOLDOWN;
+          }
+        } else {
+          console.log("Right kick detected (velocity only)!");
+          kickCooldownFrames = MAX_COOLDOWN;
+        }
+      }
+
+      // Update previous ankles for next frame
+      previousLeftAnkleY = currentLeftY;
+      previousRightAnkleY = currentRightY;
+    }
+
     async function detectPose() {
       // The main detection + draw loop
       animationId = requestAnimationFrame(detectPose);
@@ -125,6 +215,9 @@
         // Draw the detected pose(s)
         if (poses && poses.length > 0) {
           drawPoses(poses);
+
+          // Check for kick using the first pose (single-person scenario)
+          checkForKick(poses[0]);
         }
       } catch (err) {
         console.error('Pose estimation error:', err);
