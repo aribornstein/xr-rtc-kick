@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <title>Kick Detector - Initiator</title>
@@ -13,15 +14,18 @@
             padding: 10px;
             border: 1px solid #aaa;
         }
+
         textarea {
             width: 100%;
             margin-bottom: 10px;
         }
+
         button {
             margin-bottom: 10px;
         }
     </style>
 </head>
+
 <body>
     <h1>Kick Detector - Initiator</h1>
     <video id="video" playsinline autoplay style="max-width: 100%;"></video>
@@ -56,7 +60,11 @@
 
         async function setupVideo(facingMode) {
             video = document.getElementById("video");
-            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode } });
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode
+                }
+            });
             video.srcObject = stream;
         }
 
@@ -65,7 +73,9 @@
             await setupVideo("user"); // Selfie camera
 
             // Load the MoveNet Lightning model
-            const detectorConfig = { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING };
+            const detectorConfig = {
+                modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING
+            };
             detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, detectorConfig);
 
             // Create canvas for keypoints drawing
@@ -116,18 +126,6 @@
             }, 500);
         }
 
-        function drawKeypoints(keypoints, ctx) {
-            keypoints.forEach(keypoint => {
-                const { x, y, score } = keypoint;
-                if (score > 0.5) { // Only draw if confidence is high
-                    ctx.beginPath();
-                    ctx.arc(x, y, 5, 0, 2 * Math.PI); // Draw a circle
-                    ctx.fillStyle = 'red';
-                    ctx.fill();
-                }
-            });
-        }
-
         function stopCamera() {
             let stream = video.srcObject;
             if (stream) stream.getTracks().forEach(track => track.stop());
@@ -138,7 +136,9 @@
 
             // Ensure the detector is initialized
             if (!detector) {
-                const detectorConfig = { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING };
+                const detectorConfig = {
+                    modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING
+                };
                 detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, detectorConfig);
             }
 
@@ -178,7 +178,10 @@
                     const leftAnkleVelocity = previousLeftAnkleY - leftAnkle.y; // Positive = Downward
                     if (leftAnkle.y < initialLeftAnkleY - kickThreshold && leftAnkleVelocity > downwardVelocityThreshold) {
                         console.log("Left kick detected");
-                        kick = { type: "left_kick", position: leftAnkle };
+                        kick = {
+                            type: "left_kick",
+                            position: leftAnkle
+                        };
                         kickCooldown = 10; // 10 frames cooldown
                     }
 
@@ -186,7 +189,10 @@
                     const rightAnkleVelocity = previousRightAnkleY - rightAnkle.y; // Positive = Downward
                     if (rightAnkle.y < initialRightAnkleY - kickThreshold && rightAnkleVelocity > downwardVelocityThreshold) {
                         console.log("Right kick detected");
-                        kick = { type: "right_kick", position: rightAnkle };
+                        kick = {
+                            type: "right_kick",
+                            position: rightAnkle
+                        };
                         kickCooldown = 10; // 10 frames cooldown
                     }
                 }
@@ -261,7 +267,11 @@
 
         function drawKeypoints(keypoints, ctx) {
             keypoints.forEach(keypoint => {
-                const { x, y, score } = keypoint;
+                const {
+                    x,
+                    y,
+                    score
+                } = keypoint;
                 if (score > 0.5) { // Only draw if confidence is high
                     ctx.beginPath();
                     ctx.arc(x, y, 5, 0, 2 * Math.PI); // Draw a circle
@@ -272,4 +282,5 @@
         }
     </script>
 </body>
+
 </html>
