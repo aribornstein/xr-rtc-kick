@@ -132,19 +132,32 @@
       ctx.fillText(`${side} Kick!`, side === 'Left' ? 10 : canvas.width - 10, 10);
     }
 
-    function drawSkeleton(kpMap, scaleX, scaleY) {
+    function drawSkeleton(pose, scaleX, scaleY) {
       ctx.strokeStyle = 'green';
       ctx.lineWidth = 3;
       connections.forEach(([kp1, kp2]) => {
-        const keypoint1 = kpMap[kp1];
-        const keypoint2 = kpMap[kp2];
-        if (keypoint1.score > 0.3 && keypoint2.score > 0.3) {
+        const keypoint1 = pose.keypoints.find(kp => kp.name === kp1);
+        const keypoint2 = pose.keypoints.find(kp => kp.name === kp2);
+        if (keypoint1 && keypoint2 && keypoint1.score > 0.3 && keypoint2.score > 0.3) {
           ctx.beginPath();
           ctx.moveTo(keypoint1.x * scaleX, keypoint1.y * scaleY);
           ctx.lineTo(keypoint2.x * scaleX, keypoint2.y * scaleY);
           ctx.stroke();
         }
       });
+    }
+
+    function drawKeypoints(pose, scaleX, scaleY) {
+      for (const keypoint of pose.keypoints) {
+        if (keypoint.score > 0.3) {
+          ctx.beginPath();
+          ctx.arc(keypoint.x * scaleX, keypoint.y * scaleY, 5, 0, 2 * Math.PI);
+          ctx.fillStyle = 'red';
+          ctx.fill();
+          ctx.fillStyle = 'white';
+          ctx.fillText(keypoint.name, keypoint.x * scaleX + 6, keypoint.y * scaleY + 2);
+        }
+      }
     }
 
     async function init() {
@@ -171,7 +184,8 @@
       pose.keypoints.forEach(kp => { kpMap[kp.name] = kp; });
       const scaleX = canvas.width / video.videoWidth;
       const scaleY = canvas.height / video.videoHeight;
-      drawSkeleton(kpMap, scaleX, scaleY);
+      drawSkeleton(pose, scaleX, scaleY);
+      drawKeypoints(pose, scaleX, scaleY);
       const vRef = verticalRef(pose);
 
       detectKick(leftFoot, kpMap['left_hip'], kpMap['left_ankle'], vRef, 'Left');
