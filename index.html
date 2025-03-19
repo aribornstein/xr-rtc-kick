@@ -130,6 +130,21 @@
       ctx.fillText(`${side} Kick!`, side === 'Left' ? 50 : 450, 50);
     }
 
+    function drawSkeleton(pose) {
+      ctx.strokeStyle = 'green';
+      ctx.lineWidth = 2;
+      connections.forEach(([a, b]) => {
+        const kp1 = pose.keypoints.find(k => k.name === a);
+        const kp2 = pose.keypoints.find(k => k.name === b);
+        if (kp1.score > 0.3 && kp2.score > 0.3) {
+          ctx.beginPath();
+          ctx.moveTo(kp1.x, kp1.y);
+          ctx.lineTo(kp2.x, kp2.y);
+          ctx.stroke();
+        }
+      });
+    }
+
     async function init() {
       video = document.getElementById('video');
       canvas = document.getElementById('overlay');
@@ -150,6 +165,7 @@
 
       if (!poses[0]) return;
       const pose = poses[0];
+      drawSkeleton(pose);
       const vRef = verticalRef(pose);
 
       detectKick(leftFoot, pose.keypoints.find(k => k.name === 'left_hip'), pose.keypoints.find(k => k.name === 'left_ankle'), vRef, 'Left');
