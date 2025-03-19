@@ -183,7 +183,7 @@
               }))
               .then(() => {
                 console.log("Remote SDP set");
-                if (data.sdp.type === "offer") {
+                if (data.type === "offer") {
                   // Create an answer to the offer
                   return peerConnection.createAnswer();
                 }
