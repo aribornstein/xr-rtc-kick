@@ -66,20 +66,50 @@
     // Create a simple stick figure using lines
     function createStickFigure() {
       const material = new THREE.LineBasicMaterial({ color: 0x0000ff });
-      const points = [
-        new THREE.Vector3(0, 1, 0),    // Head
-        new THREE.Vector3(0, 0.5, 0),  // Neck
-        new THREE.Vector3(0, 0, 0),    // Torso
-        new THREE.Vector3(-0.5, -1, 0),// Left leg
-        new THREE.Vector3(0, 0, 0),    // Back to torso
-        new THREE.Vector3(0.5, -1, 0), // Right leg
-        new THREE.Vector3(0, 0, 0),    // Back to torso
-        new THREE.Vector3(-0.5, 0.5, 0),// Left arm
-        new THREE.Vector3(0, 0, 0),    // Back to torso
-        new THREE.Vector3(0.5, 0.5, 0) // Right arm
-      ];
-      const geometry = new THREE.BufferGeometry().setFromPoints(points);
-      return new THREE.Line(geometry, material);
+
+      // Define points for the stick figure
+      const head = new THREE.Vector3(0, 1, 0);
+      const neck = new THREE.Vector3(0, 0.5, 0);
+      const torso = new THREE.Vector3(0, 0, 0);
+      const leftLegStart = new THREE.Vector3(0, 0, 0);
+      const leftLegEnd = new THREE.Vector3(-0.5, -1, 0);
+      const rightLegStart = new THREE.Vector3(0, 0, 0);
+      const rightLegEnd = new THREE.Vector3(0.5, -1, 0);
+      const leftArmStart = new THREE.Vector3(-0.5, 0.5, 0);
+      const leftArmEnd = new THREE.Vector3(-1, 0, 0);
+      const rightArmStart = new THREE.Vector3(0.5, 0.5, 0);
+      const rightArmEnd = new THREE.Vector3(1, 0, 0);
+
+      // Create geometries for each limb
+      const headGeometry = new THREE.BufferGeometry().setFromPoints([head, neck]);
+      const torsoGeometry = new THREE.BufferGeometry().setFromPoints([neck, torso]);
+      const leftLegGeometry = new THREE.BufferGeometry().setFromPoints([leftLegStart, leftLegEnd]);
+      const rightLegGeometry = new THREE.BufferGeometry().setFromPoints([rightLegStart, rightLegEnd]);
+      const leftArmGeometry = new THREE.BufferGeometry().setFromPoints([leftArmStart, leftArmEnd]);
+      const rightArmGeometry = new THREE.BufferGeometry().setFromPoints([rightArmStart, rightArmEnd]);
+      
+      // Create lines for each limb
+      const headLine = new THREE.Line(headGeometry, material);
+      const torsoLine = new THREE.Line(torsoGeometry, material);
+      const leftLeg = new THREE.Line(leftLegGeometry, material);
+      const rightLeg = new THREE.Line(rightLegGeometry, material);
+      const leftArm =  new THREE.Line(leftArmGeometry, material);
+      const rightArm = new THREE.Line(rightArmGeometry, material);
+
+      // Create a group and add the limbs to it
+      const stickFigureGroup = new THREE.Group();
+      stickFigureGroup.add(headLine);
+      stickFigureGroup.add(torsoLine);
+      stickFigureGroup.add(leftLeg);
+      stickFigureGroup.add(rightLeg);
+      stickFigureGroup.add(leftArm);
+      stickFigureGroup.add(rightArm);
+
+      // Store references to the legs for animation
+      stickFigureGroup.leftLeg = leftLeg;
+      stickFigureGroup.rightLeg = rightLeg;
+
+      return stickFigureGroup;
     }
 
     // Animate the scene
@@ -112,16 +142,20 @@
     // Process received kick data and animate stick figure
     function handleKickData(data) {
       console.log("Received kick data:", data);
+      const kickRotation = Math.PI / 4; // Define kick rotation amount
+
       if (data.type === "left_kick") {
-        // Example: Rotate stick figure for left kick
-        stickFigure.rotation.z = Math.PI / 4;
+        // Rotate left leg for left kick
+        stickFigure.leftLeg.rotation.x = kickRotation;
       } else if (data.type === "right_kick") {
-        // Example: Rotate stick figure for right kick
-        stickFigure.rotation.z = -Math.PI / 4;
+        // Rotate right leg for right kick
+        stickFigure.rightLeg.rotation.x = -kickRotation;
       }
+
       // Reset rotation after a short delay
       setTimeout(() => {
-        stickFigure.rotation.z = 0;
+        stickFigure.leftLeg.rotation.x = 0;
+        stickFigure.rightLeg.rotation.x = 0;
       }, 500);
     }
 
@@ -133,31 +167,36 @@
     document.getElementById("connectButton").addEventListener("click", () => {
       const signalingData = document.getElementById("signalingData").value;
       if (signalingData) {
-        const data = JSON.parse(signalingData);
-        if (data.sdp) {
-          // Set the remote description with the received offer
-          peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp))
-            .then(() => {
-              console.log("Remote SDP set");
-              if (data.sdp.type === "offer") {
-                // Create an answer to the offer
-                return peerConnection.createAnswer();
-              }
-            })
-            .then(answer => {
-              if (answer) {
-                return peerConnection.setLocalDescription(answer).then(() => {
-                  document.getElementById("localAnswer").value = JSON.stringify(peerConnection.localDescription);
-                  console.log("Answer created:", peerConnection.localDescription);
-                });
-              }
-            })
-            .catch(console.error);
-        } else if (data.candidate) {
-          // Add received ICE candidate
-          peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate))
-            .then(() => console.log("Added remote ICE candidate"))
-            .catch(console.error);
+        try {
+          const data = JSON.parse(signalingData);
+          if (data.sdp) {
+            // Set the remote description with the received offer
+            peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp))
+              .then(() => {
+                console.log("Remote SDP set");
+                if (data.sdp.type === "offer") {
+                  // Create an answer to the offer
+                  return peerConnection.createAnswer();
+                }
+              })
+              .then(answer => {
+                if (answer) {
+                  return peerConnection.setLocalDescription(answer).then(() => {
+                    document.getElementById("localAnswer").value = JSON.stringify(peerConnection.localDescription);
+                    console.log("Answer created:", peerConnection.localDescription);
+                  });
+                }
+              })
+              .catch(console.error);
+          } else if (data.candidate) {
+            // Add received ICE candidate
+            peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate))
+              .then(() => console.log("Added remote ICE candidate"))
+              .catch(console.error);
+          }
+        } catch (error) {
+          console.error("Error parsing signaling data:", error);
+          alert("Invalid signaling data format.");
         }
       }
     });
