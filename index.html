@@ -50,6 +50,9 @@
 
     <script>
         let detector, video, peerConnection, dataChannel;
+        let initialLeftAnkleY, initialRightAnkleY;
+        let previousLeftAnkleY, previousRightAnkleY; // Store previous positions
+        let kickCooldown = 0; // Cooldown timer
 
         async function setupVideo(facingMode) {
             video = document.getElementById("video");
@@ -85,10 +88,44 @@
                     clearInterval(interval);
                     document.getElementById("calibrationMessage").innerText = "Calibration complete!";
                     document.querySelector("button[onclick='startKickDetection()']").disabled = false;
+
+                    // Store initial ankle positions
+                    initialLeftAnkleY = leftAnkle.y;
+                    initialRightAnkleY = rightAnkle.y;
+                    previousLeftAnkleY = leftAnkle.y; // Initialize previous positions
+                    previousRightAnkleY = rightAnkle.y;
+
                     stopCamera();
                     setupVideo("environment"); // Switch to rear camera
                 }
+
+                // Draw keypoints on the video frame
+                drawKeypoints(keypoints);
             }, 500);
+        }
+
+        function drawKeypoints(keypoints) {
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.style.position = 'absolute';
+            canvas.style.top = video.offsetTop + 'px';
+            canvas.style.left = video.offsetLeft + 'px';
+            canvas.style.zIndex = 10; // Ensure it's on top
+            video.parentNode.appendChild(canvas);
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear previous drawings
+
+
+            keypoints.forEach(keypoint => {
+                const { x, y, score } = keypoint;
+                if (score > 0.5) { // Only draw if confidence is high
+                    ctx.beginPath();
+                    ctx.arc(x, y, 5, 0, 2 * Math.PI); // Draw a circle
+                    ctx.fillStyle = 'red';
+                    ctx.fill();
+                }
+            });
         }
 
         function stopCamera() {
@@ -117,15 +154,37 @@
 
                 if (!leftAnkle || !rightAnkle) return;
 
+                const kickThresholdPercentage = 0.05; // Adjust as needed (5% of video height)
+                const kickThreshold = video.videoHeight * kickThresholdPercentage;
+                const downwardVelocityThreshold = 10; // Adjust as needed
+
                 let kick = null;
-                // Example logic for detecting a kick (this may require adjustment)
-                if (leftAnkle.y < leftAnkle.y - 50) {
-                    kick = { type: "left_kick", position: leftAnkle };
-                } else if (rightAnkle.y < rightAnkle.y - 50) {
-                    kick = { type: "right_kick", position: rightAnkle };
+
+                if (kickCooldown > 0) {
+                    kickCooldown--;
+                } else {
+                    // Left Kick Detection
+                    const leftAnkleVelocity = previousLeftAnkleY - leftAnkle.y; // Positive = Downward
+                    if (leftAnkle.y < initialLeftAnkleY - kickThreshold && leftAnkleVelocity > downwardVelocityThreshold) {
+                        console.log("Left kick detected");
+                        kick = { type: "left_kick", position: leftAnkle };
+                        kickCooldown = 10; // 10 frames cooldown
+                    }
+
+                    // Right Kick Detection
+                    const rightAnkleVelocity = previousRightAnkleY - rightAnkle.y; // Positive = Downward
+                    if (rightAnkle.y < initialRightAnkleY - kickThreshold && rightAnkleVelocity > downwardVelocityThreshold) {
+                        console.log("Right kick detected");
+                        kick = { type: "right_kick", position: rightAnkle };
+                        kickCooldown = 10; // 10 frames cooldown
+                    }
                 }
 
                 if (kick) sendKickData(kick);
+
+                // Update previous ankle positions
+                previousLeftAnkleY = leftAnkle.y;
+                previousRightAnkleY = rightAnkle.y;
             }, 100);
         }
 
