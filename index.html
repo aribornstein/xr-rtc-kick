@@ -14,13 +14,12 @@
     }
     video, canvas {
       max-width: 100%;
-      /* Ensures both video and canvas are the same size */
     }
     canvas {
       position: absolute;
       top: 0;
       left: 0;
-      pointer-events: none; /* Allows clicks to pass through */
+      pointer-events: none;
     }
     #signaling {
       margin-top: 20px;
@@ -138,12 +137,11 @@
           initialRightAnkleY = rightAnkle.y;
           previousLeftAnkleY = leftAnkle.y;
           previousRightAnkleY = rightAnkle.y;
-
         }
       }, 500);
     }
 
-    // Continuous pose detection loop using requestAnimationFrame
+    // Combined pose detection and kick detection loop using requestAnimationFrame
     async function detectPose() {
       if (!isRunning) return;
       
@@ -153,7 +151,45 @@
 
         try {
           const poses = await detector.estimatePoses(video);
+          // Draw poses on the canvas
           drawPoses(poses);
+          
+          // Perform kick detection using the same pose data
+          if (poses.length > 0) {
+            const keypoints = poses[0].keypoints;
+            const leftAnkle = keypoints.find(k => k.name === 'left_ankle');
+            const rightAnkle = keypoints.find(k => k.name === 'right_ankle');
+            if (leftAnkle && rightAnkle) {
+              const kickThresholdPercentage = 0.05; // 5% of video height
+              const kickThreshold = video.videoHeight * kickThresholdPercentage;
+              const downwardVelocityThreshold = 10; // Adjust as needed
+              let kick = null;
+
+              if (kickCooldown > 0) {
+                kickCooldown--;
+              } else {
+                // Left Kick Detection
+                const leftAnkleVelocity = previousLeftAnkleY - leftAnkle.y; // Positive => downward movement
+                if (leftAnkle.y < initialLeftAnkleY - kickThreshold && leftAnkleVelocity > downwardVelocityThreshold) {
+                  console.log("Left kick detected");
+                  kick = { type: "left_kick", position: leftAnkle };
+                  kickCooldown = 10; // 10 frames cooldown
+                }
+                // Right Kick Detection
+                const rightAnkleVelocity = previousRightAnkleY - rightAnkle.y;
+                if (rightAnkle.y < initialRightAnkleY - kickThreshold && rightAnkleVelocity > downwardVelocityThreshold) {
+                  console.log("Right kick detected");
+                  kick = { type: "right_kick", position: rightAnkle };
+                  kickCooldown = 10;
+                }
+              }
+              if (kick) sendKickData(kick);
+
+              // Update previous ankle positions
+              previousLeftAnkleY = leftAnkle.y;
+              previousRightAnkleY = rightAnkle.y;
+            }
+          }
         } catch (error) {
           console.error('Error detecting poses:', error);
         }
@@ -220,7 +256,7 @@
       }
     }
 
-    // Kick detection loop (runs parallel to pose drawing)
+    // Kick detection and starting the detection loop
     async function startKickDetection() {
       document.getElementById("calibrationMessage").innerText = "Detecting kicks and poses...";
       
@@ -232,52 +268,8 @@
 
       setupWebRTC();
 
-      // Start continuous pose detection loop
+      // Start continuous combined pose and kick detection loop
       detectPose();
-
-      // Kick detection interval (every 100ms)
-      setInterval(async () => {
-        const poses = await detector.estimatePoses(video);
-        if (poses.length === 0) return;
-
-        const keypoints = poses[0].keypoints;
-        const leftAnkle = keypoints.find(k => k.name === 'left_ankle');
-        const rightAnkle = keypoints.find(k => k.name === 'right_ankle');
-
-        if (!leftAnkle || !rightAnkle) return;
-
-        const kickThresholdPercentage = 0.05; // 5% of video height
-        const kickThreshold = video.videoHeight * kickThresholdPercentage;
-        const downwardVelocityThreshold = 10; // Adjust as needed
-
-        let kick = null;
-
-        if (kickCooldown > 0) {
-          kickCooldown--;
-        } else {
-          // Left Kick Detection
-          const leftAnkleVelocity = previousLeftAnkleY - leftAnkle.y; // Positive => downward movement
-          if (leftAnkle.y < initialLeftAnkleY - kickThreshold && leftAnkleVelocity > downwardVelocityThreshold) {
-            console.log("Left kick detected");
-            kick = { type: "left_kick", position: leftAnkle };
-            kickCooldown = 10; // 10 frames cooldown
-          }
-
-          // Right Kick Detection
-          const rightAnkleVelocity = previousRightAnkleY - rightAnkle.y;
-          if (rightAnkle.y < initialRightAnkleY - kickThreshold && rightAnkleVelocity > downwardVelocityThreshold) {
-            console.log("Right kick detected");
-            kick = { type: "right_kick", position: rightAnkle };
-            kickCooldown = 10;
-          }
-        }
-
-        if (kick) sendKickData(kick);
-
-        // Update previous ankle positions
-        previousLeftAnkleY = leftAnkle.y;
-        previousRightAnkleY = rightAnkle.y;
-      }, 100);
     }
 
     // WebRTC setup for sending kick data
