@@ -68,6 +68,17 @@
             const detectorConfig = { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING };
             detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, detectorConfig);
 
+            // Create canvas for keypoints drawing
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.style.position = 'absolute';
+            canvas.style.top = video.offsetTop + 'px';
+            canvas.style.left = video.offsetLeft + 'px';
+            canvas.style.zIndex = 10; // Ensure it's on top
+            video.parentNode.appendChild(canvas);
+            const ctx = canvas.getContext('2d');
+
             const interval = setInterval(async () => {
                 const poses = await detector.estimatePoses(video);
                 if (poses.length === 0) {
@@ -99,24 +110,13 @@
                     setupVideo("environment"); // Switch to rear camera
                 }
 
-                // Draw keypoints on the video frame
-                drawKeypoints(keypoints);
+                // Clear canvas and draw keypoints
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                drawKeypoints(keypoints, ctx);
             }, 500);
         }
 
-        function drawKeypoints(keypoints) {
-            const canvas = document.createElement('canvas');
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            canvas.style.position = 'absolute';
-            canvas.style.top = video.offsetTop + 'px';
-            canvas.style.left = video.offsetLeft + 'px';
-            canvas.style.zIndex = 10; // Ensure it's on top
-            video.parentNode.appendChild(canvas);
-            const ctx = canvas.getContext('2d');
-            ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear previous drawings
-
-
+        function drawKeypoints(keypoints, ctx) {
             keypoints.forEach(keypoint => {
                 const { x, y, score } = keypoint;
                 if (score > 0.5) { // Only draw if confidence is high
