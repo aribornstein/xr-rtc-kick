@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Kick Detector and Visualizer - Receiver</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    canvas { display: block; }
+    #controls {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 10;
+      background: rgba(255, 255, 255, 0.8);
+      padding: 10px;
+      border-radius: 5px;
+    }
+    textarea {
+      width: 100%;
+      margin-bottom: 10px;
+    }
+    button {
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <h2>Receiver (Responder)</h2>
+    <button id="startButton">Initialize WebRTC</button>
+    <br>
+    <label for="signalingData">Paste signaling data from Initiator (Offer/ICE):</label>
+    <textarea id="signalingData" rows="8" placeholder='{"sdp":{...}} or {"candidate":{...}}'></textarea>
+    <br>
+    <button id="connectButton">Connect</button>
+    <br>
+    <label for="localAnswer">Local Answer (send this back to Initiator):</label>
+    <textarea id="localAnswer" rows="8" readonly></textarea>
+    <br>
+    <label for="localICE">Local ICE Candidates (send these to Initiator):</label>
+    <textarea id="localICE" rows="8" readonly></textarea>
+  </div>
+
+  <!-- Three.js for stick figure visualization -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+    let scene, camera, renderer, stickFigure, peerConnection, dataChannel;
+
+    // Initialize Three.js scene
+    function initThreeJS() {
+      scene = new THREE.Scene();
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+      camera.position.z = 5;
+
+      renderer = new THREE.WebGLRenderer();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      // Create stick figure
+      stickFigure = createStickFigure();
+      scene.add(stickFigure);
+
+      animate();
+    }
+
+    // Create a simple stick figure using lines
+    function createStickFigure() {
+      const material = new THREE.LineBasicMaterial({ color: 0x0000ff });
+      const points = [
+        new THREE.Vector3(0, 1, 0),    // Head
+        new THREE.Vector3(0, 0.5, 0),  // Neck
+        new THREE.Vector3(0, 0, 0),    // Torso
+        new THREE.Vector3(-0.5, -1, 0),// Left leg
+        new THREE.Vector3(0, 0, 0),    // Back to torso
+        new THREE.Vector3(0.5, -1, 0), // Right leg
+        new THREE.Vector3(0, 0, 0),    // Back to torso
+        new THREE.Vector3(-0.5, 0.5, 0),// Left arm
+        new THREE.Vector3(0, 0, 0),    // Back to torso
+        new THREE.Vector3(0.5, 0.5, 0) // Right arm
+      ];
+      const geometry = new THREE.BufferGeometry().setFromPoints(points);
+      return new THREE.Line(geometry, material);
+    }
+
+    // Animate the scene
+    function animate() {
+      requestAnimationFrame(animate);
+      renderer.render(scene, camera);
+    }
+
+    // Initialize WebRTC as receiver (responder)
+    function initWebRTC() {
+      peerConnection = new RTCPeerConnection();
+
+      // Listen for incoming data channels (from initiator)
+      peerConnection.ondatachannel = (event) => {
+        dataChannel = event.channel;
+        dataChannel.onopen = () => console.log("Data channel opened");
+        dataChannel.onmessage = (event) => handleKickData(JSON.parse(event.data));
+      };
+
+      // Handle ICE candidates
+      peerConnection.onicecandidate = event => {
+        if (event.candidate) {
+          const localICETextarea = document.getElementById("localICE");
+          localICETextarea.value += JSON.stringify(event.candidate) + "\n";
+          console.log("Local ICE candidate:", event.candidate);
+        }
+      };
+    }
+
+    // Process received kick data and animate stick figure
+    function handleKickData(data) {
+      console.log("Received kick data:", data);
+      if (data.type === "left_kick") {
+        // Example: Rotate stick figure for left kick
+        stickFigure.rotation.z = Math.PI / 4;
+      } else if (data.type === "right_kick") {
+        // Example: Rotate stick figure for right kick
+        stickFigure.rotation.z = -Math.PI / 4;
+      }
+      // Reset rotation after a short delay
+      setTimeout(() => {
+        stickFigure.rotation.z = 0;
+      }, 500);
+    }
+
+    // Event listeners for UI buttons
+    document.getElementById("startButton").addEventListener("click", () => {
+      initWebRTC();
+    });
+
+    document.getElementById("connectButton").addEventListener("click", () => {
+      const signalingData = document.getElementById("signalingData").value;
+      if (signalingData) {
+        const data = JSON.parse(signalingData);
+        if (data.sdp) {
+          // Set the remote description with the received offer
+          peerConnection.setRemoteDescription(new RTCSessionDescription(data.sdp))
+            .then(() => {
+              console.log("Remote SDP set");
+              if (data.sdp.type === "offer") {
+                // Create an answer to the offer
+                return peerConnection.createAnswer();
+              }
+            })
+            .then(answer => {
+              if (answer) {
+                return peerConnection.setLocalDescription(answer).then(() => {
+                  document.getElementById("localAnswer").value = JSON.stringify(peerConnection.localDescription);
+                  console.log("Answer created:", peerConnection.localDescription);
+                });
+              }
+            })
+            .catch(console.error);
+        } else if (data.candidate) {
+          // Add received ICE candidate
+          peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate))
+            .then(() => console.log("Added remote ICE candidate"))
+            .catch(console.error);
+        }
+      }
+    });
+
+    // Initialize Three.js on page load
+    window.onload = initThreeJS;
+  </script>
+</body>
+</html>

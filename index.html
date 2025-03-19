@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Kick Detector - Initiator</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
+    <style>
+        #signaling {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #aaa;
+        }
+        textarea {
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        button {
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Kick Detector - Initiator</h1>
+    <video id="video" playsinline autoplay style="max-width: 100%;"></video>
+    <p id="calibrationMessage">Align yourself with the camera.</p>
+    <button onclick="startCalibration()">Start Calibration</button>
+    <button onclick="startKickDetection()" disabled>Start Game</button>
+
+    <div id="signaling">
+        <h2>Manual Signaling (Initiator)</h2>
+        <label for="localOffer">Local Offer (send this to Responder):</label>
+        <textarea id="localOffer" rows="8" readonly></textarea>
+        <br>
+        <label for="localICE">Local ICE Candidates (send these to Responder):</label>
+        <textarea id="localICE" rows="8" readonly></textarea>
+        <br>
+        <label for="remoteAnswer">Remote Answer (paste from Responder):</label>
+        <textarea id="remoteAnswer" rows="8"></textarea>
+        <br>
+        <button onclick="setRemoteAnswer()">Set Remote Answer</button>
+        <br>
+        <label for="remoteICE">Remote ICE Candidates (paste from Responder, one per line):</label>
+        <textarea id="remoteICE" rows="8"></textarea>
+        <br>
+        <button onclick="addRemoteICE()">Add Remote ICE Candidates</button>
+    </div>
+
+    <script>
+        let detector, video, peerConnection, dataChannel;
+
+        async function setupVideo(facingMode) {
+            video = document.getElementById("video");
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode } });
+            video.srcObject = stream;
+        }
+
+        async function startCalibration() {
+            document.getElementById("calibrationMessage").innerText = "Calibrating...";
+            await setupVideo("user"); // Selfie camera
+
+            // Load the MoveNet Lightning model
+            const detectorConfig = { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING };
+            detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, detectorConfig);
+
+            const interval = setInterval(async () => {
+                const poses = await detector.estimatePoses(video);
+                if (poses.length === 0) {
+                    document.getElementById("calibrationMessage").innerText = "No person detected.";
+                    return;
+                }
+
+                const keypoints = poses[0].keypoints;
+                const leftAnkle = keypoints.find(k => k.name === 'left_ankle');
+                const rightAnkle = keypoints.find(k => k.name === 'right_ankle');
+                const nose = keypoints.find(k => k.name === 'nose');
+
+                if (!leftAnkle || !rightAnkle) {
+                    document.getElementById("calibrationMessage").innerText = "Step back to fit in frame.";
+                } else if (!nose || nose.y > video.videoHeight * 0.6) {
+                    document.getElementById("calibrationMessage").innerText = "Raise the phone higher.";
+                } else {
+                    clearInterval(interval);
+                    document.getElementById("calibrationMessage").innerText = "Calibration complete!";
+                    document.querySelector("button[onclick='startKickDetection()']").disabled = false;
+                    stopCamera();
+                    setupVideo("environment"); // Switch to rear camera
+                }
+            }, 500);
+        }
+
+        function stopCamera() {
+            let stream = video.srcObject;
+            if (stream) stream.getTracks().forEach(track => track.stop());
+        }
+
+        async function startKickDetection() {
+            document.getElementById("calibrationMessage").innerText = "Detecting kicks...";
+
+            // Ensure the detector is initialized
+            if (!detector) {
+                const detectorConfig = { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING };
+                detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, detectorConfig);
+            }
+
+            setupWebRTC();
+
+            setInterval(async () => {
+                const poses = await detector.estimatePoses(video);
+                if (poses.length === 0) return;
+
+                const keypoints = poses[0].keypoints;
+                const leftAnkle = keypoints.find(k => k.name === 'left_ankle');
+                const rightAnkle = keypoints.find(k => k.name === 'right_ankle');
+
+                if (!leftAnkle || !rightAnkle) return;
+
+                let kick = null;
+                // Example logic for detecting a kick (this may require adjustment)
+                if (leftAnkle.y < leftAnkle.y - 50) {
+                    kick = { type: "left_kick", position: leftAnkle };
+                } else if (rightAnkle.y < rightAnkle.y - 50) {
+                    kick = { type: "right_kick", position: rightAnkle };
+                }
+
+                if (kick) sendKickData(kick);
+            }, 100);
+        }
+
+        function setupWebRTC() {
+            peerConnection = new RTCPeerConnection();
+            dataChannel = peerConnection.createDataChannel("kickData");
+
+            dataChannel.onopen = () => console.log("WebRTC Data Channel Opened");
+
+            peerConnection.onicecandidate = event => {
+                if (event.candidate) {
+                    const localICETextarea = document.getElementById("localICE");
+                    localICETextarea.value += JSON.stringify(event.candidate) + "\n";
+                    console.log("Local ICE candidate:", event.candidate);
+                }
+            };
+
+            peerConnection.createOffer().then(offer => {
+                return peerConnection.setLocalDescription(offer);
+            }).then(() => {
+                document.getElementById("localOffer").value = JSON.stringify(peerConnection.localDescription);
+                console.log("Local Offer created:", peerConnection.localDescription);
+            }).catch(console.error);
+        }
+
+        function setRemoteAnswer() {
+            const remoteAnswerText = document.getElementById("remoteAnswer").value;
+            if (!remoteAnswerText) {
+                alert("Please paste the remote answer.");
+                return;
+            }
+            const answer = JSON.parse(remoteAnswerText);
+            peerConnection.setRemoteDescription(answer)
+                .then(() => console.log("Remote answer set."))
+                .catch(console.error);
+        }
+
+        function addRemoteICE() {
+            const remoteICEText = document.getElementById("remoteICE").value;
+            if (!remoteICEText) {
+                alert("Please paste remote ICE candidates.");
+                return;
+            }
+            const iceCandidates = remoteICEText.split("\n").filter(candidate => candidate.trim());
+            iceCandidates.forEach(candidateStr => {
+                const candidate = JSON.parse(candidateStr);
+                peerConnection.addIceCandidate(candidate)
+                    .then(() => console.log("Added remote ICE candidate:", candidate))
+                    .catch(console.error);
+            });
+        }
+
+        function sendKickData(kick) {
+            if (dataChannel.readyState === "open") {
+                dataChannel.send(JSON.stringify(kick));
+                console.log("Sent kick data:", kick);
+            }
+        }
+    </script>
+</body>
+</html>
