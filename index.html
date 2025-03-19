@@ -2,13 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Pose Detection with Kick Detection</title>
+  <title>Pose Detection with Improved Kick Detection (with Knee Check)</title>
   <!-- TensorFlow.js and Pose Detection libraries -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
-
+  
   <style>
     body {
       margin: 0; 
@@ -22,8 +22,8 @@
       display: inline-block;
     }
     video, canvas {
-      width: 640px;  /* Adjust as you like */
-      height: 480px; /* Adjust as you like */
+      width: 640px;  
+      height: 480px; 
       border: 1px solid #aaa;
     }
     canvas {
@@ -39,7 +39,7 @@
   </style>
 </head>
 <body>
-  <h1>Continuous Pose Detection (MoveNet) + Kick Detection</h1>
+  <h1>Continuous Pose Detection (MoveNet) + Kick Detection (with Knee Check)</h1>
   <p id="status">Loading model...</p>
 
   <div id="videoContainer">
@@ -52,19 +52,21 @@
     let detector;
     let animationId;
 
-    // -- Kick Detection Globals --
-    let previousLeftAnkleY = null;
-    let previousRightAnkleY = null;
-    let kickCooldownFrames = 0;
-
-    // Constants for thresholds
-    const MAX_COOLDOWN = 10;          // frames to wait after a kick is detected
-    const KICK_VELOCITY_THRESHOLD = 10; // how quickly the ankle must move up
-    const KICK_HEIGHT_THRESHOLD = 0.3;  // fraction of body height foot must rise
-
     const statusEl = document.getElementById('status');
 
-    // List of edges to connect keypoints into a skeleton
+    // --- Kick Detection State Variables & Constants ---
+    // State per foot: "waiting" | "rising" | "falling"
+    // baseline: initial ankle y‑position
+    // maxRise: maximum rise observed in "rising" state
+    let leftFootState = { state: "waiting", baseline: null, maxRise: 0 };
+    let rightFootState = { state: "waiting", baseline: null, maxRise: 0 };
+
+    // Threshold constants (in pixels)
+    const MIN_RISE_PIXELS = 30;      // Minimum upward movement to start a kick
+    const PEAK_DROP_RATIO = 0.8;     // When rise falls below 80% of peak, register a kick
+    const MIN_KNEE_ANKLE_DIFF = 20;  // Knee must be at least 20 pixels above ankle
+
+    // List of edges for drawing the skeleton
     const connections = [
       ['nose', 'left_eye'], ['nose', 'right_eye'],
       ['left_eye', 'left_ear'], ['right_eye', 'right_ear'],
@@ -98,18 +100,16 @@
     }
 
     async function setupCamera() {
-      // Request webcam
+      // Request webcam stream
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: 640, height: 480 },
         audio: false
       });
       video.srcObject = stream;
-
-      // Wait for the video to be ready
       return new Promise(resolve => {
         video.onloadedmetadata = () => {
           video.play();
-          // Match canvas to video size
+          // Set canvas dimensions to match video
           canvas.width = video.videoWidth;
           canvas.height = video.videoHeight;
           resolve();
@@ -117,107 +117,109 @@
       });
     }
 
-    // -- Kick detection logic --
-    function checkForKick(pose) {
-      if (kickCooldownFrames > 0) {
-        // If we're on cooldown, decrement and return
-        kickCooldownFrames--;
-        return;
+    // --- Improved Kick Detection with Knee Check ---
+    // Now updateFootState takes current ankle y and corresponding knee y.
+    function updateFootState(footState, currentY, kneeY) {
+      // Only process if knee is sufficiently above the ankle.
+      // In image coordinates (top=0), a smaller y means "higher".
+      // So, we require: kneeY - currentY > MIN_KNEE_ANKLE_DIFF.
+      if ((kneeY - currentY) < MIN_KNEE_ANKLE_DIFF) {
+        // Not enough difference: reset state.
+        footState.state = "waiting";
+        footState.baseline = currentY;
+        footState.maxRise = 0;
+        return false;
       }
 
-      // Find keypoints we care about
+      // Initialize baseline if not set.
+      if (footState.baseline === null) {
+        footState.baseline = currentY;
+        footState.maxRise = 0;
+        footState.state = "waiting";
+        return false;
+      }
+
+      // Calculate upward movement (rise) relative to baseline.
+      let rise = footState.baseline - currentY; // positive if foot is raised
+
+      if (footState.state === "waiting") {
+        // If the ankle is raised enough, transition to "rising".
+        if (rise > MIN_RISE_PIXELS) {
+          footState.state = "rising";
+          footState.maxRise = rise;
+        }
+      } else if (footState.state === "rising") {
+        // Record maximum rise.
+        if (rise > footState.maxRise) {
+          footState.maxRise = rise;
+        }
+        // When the rise falls below a fraction of the peak, consider it a kick.
+        if (rise < footState.maxRise * PEAK_DROP_RATIO) {
+          if (footState.maxRise > MIN_RISE_PIXELS) {
+            footState.state = "falling";
+            return true; // Kick detected
+          }
+        }
+      } else if (footState.state === "falling") {
+        // Reset state once the foot returns near baseline.
+        if (rise < MIN_RISE_PIXELS / 2) {
+          footState.state = "waiting";
+          footState.baseline = currentY;
+          footState.maxRise = 0;
+        }
+      }
+      return false;
+    }
+
+    // Use the updated state-machine with knee information.
+    function checkForKickImproved(pose) {
+      // Get keypoints for left and right ankles and knees.
       const leftAnkle = pose.keypoints.find(k => k.name === 'left_ankle');
       const rightAnkle = pose.keypoints.find(k => k.name === 'right_ankle');
-      const leftHip   = pose.keypoints.find(k => k.name === 'left_hip');
-      const rightHip  = pose.keypoints.find(k => k.name === 'right_hip');
+      const leftKnee = pose.keypoints.find(k => k.name === 'left_knee');
+      const rightKnee = pose.keypoints.find(k => k.name === 'right_knee');
 
-      // Make sure ankles exist & have decent detection confidence
-      if (!leftAnkle || !rightAnkle || leftAnkle.score < 0.3 || rightAnkle.score < 0.3) return;
+      if (!leftAnkle || !rightAnkle || leftAnkle.score < 0.3 || rightAnkle.score < 0.3 ||
+          !leftKnee || !rightKnee || leftKnee.score < 0.3 || rightKnee.score < 0.3) return;
 
-      // For an optional height-based threshold, we need a reference for the body height:
-      let bodyHeight = 0;
-      if (leftHip && rightHip) {
-        if (leftHip.score > 0.3 && rightHip.score > 0.3) {
-          const avgHipY = (leftHip.y + rightHip.y) / 2;
-          const avgAnkleY = (leftAnkle.y + rightAnkle.y) / 2;
-          bodyHeight = Math.abs(avgAnkleY - avgHipY);
-        }
+      let leftKick = updateFootState(leftFootState, leftAnkle.y, leftKnee.y);
+      let rightKick = updateFootState(rightFootState, rightAnkle.y, rightKnee.y);
+
+      if (leftKick) {
+        console.log("Left kick detected (with knee check)!");
+        // Reset state for left foot after detection.
+        leftFootState.state = "waiting";
+        leftFootState.baseline = leftAnkle.y;
+        leftFootState.maxRise = 0;
       }
-
-      // Current Y positions (lower Y means foot is higher in the image if top=0)
-      const currentLeftY = leftAnkle.y;
-      const currentRightY = rightAnkle.y;
-
-      // If this is the very first frame, just store the ankles and return
-      if (previousLeftAnkleY === null || previousRightAnkleY === null) {
-        previousLeftAnkleY = currentLeftY;
-        previousRightAnkleY = currentRightY;
-        return;
+      if (rightKick) {
+        console.log("Right kick detected (with knee check)!");
+        rightFootState.state = "waiting";
+        rightFootState.baseline = rightAnkle.y;
+        rightFootState.maxRise = 0;
       }
-
-      // Calculate velocity (previous - current). If it's positive => foot moved up
-      const leftVelocity = previousLeftAnkleY - currentLeftY;
-      const rightVelocity = previousRightAnkleY - currentRightY;
-
-      // Check left foot
-      if (leftVelocity > KICK_VELOCITY_THRESHOLD) {
-        // Also check if foot is above some fraction of body height
-        if (bodyHeight > 0) {
-          const footAboveThreshold = (leftHip && leftHip.score > 0.3)
-            ? (leftHip.y - leftAnkle.y) > (KICK_HEIGHT_THRESHOLD * bodyHeight)
-            : true; // if we can’t measure height, ignore
-          if (footAboveThreshold) {
-            console.log("Left kick detected!");
-            kickCooldownFrames = MAX_COOLDOWN;
-          }
-        } else {
-          console.log("Left kick detected (velocity only)!");
-          kickCooldownFrames = MAX_COOLDOWN;
-        }
-      }
-
-      // Check right foot
-      if (rightVelocity > KICK_VELOCITY_THRESHOLD) {
-        if (bodyHeight > 0) {
-          const footAboveThreshold = (rightHip && rightHip.score > 0.3)
-            ? (rightHip.y - rightAnkle.y) > (KICK_HEIGHT_THRESHOLD * bodyHeight)
-            : true;
-          if (footAboveThreshold) {
-            console.log("Right kick detected!");
-            kickCooldownFrames = MAX_COOLDOWN;
-          }
-        } else {
-          console.log("Right kick detected (velocity only)!");
-          kickCooldownFrames = MAX_COOLDOWN;
-        }
-      }
-
-      // Update previous ankles for next frame
-      previousLeftAnkleY = currentLeftY;
-      previousRightAnkleY = currentRightY;
     }
 
     async function detectPose() {
-      // The main detection + draw loop
+      // Main detection and drawing loop.
       animationId = requestAnimationFrame(detectPose);
 
       if (!detector) return;
-      if (video.readyState < 2) return; // not fully playing
+      if (video.readyState < 2) return; // ensure video is ready
 
       try {
-        // Estimate poses
+        // Estimate poses from the video.
         const poses = await detector.estimatePoses(video);
 
-        // Draw video onto canvas
+        // Clear canvas and draw the video frame.
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        // Draw the detected pose(s)
+        // Draw each detected pose.
         if (poses && poses.length > 0) {
           drawPoses(poses);
-
-          // Check for kick using the first pose (single-person scenario)
-          checkForKick(poses[0]);
+          // Apply improved kick detection using the first pose.
+          checkForKickImproved(poses[0]);
         }
       } catch (err) {
         console.error('Pose estimation error:', err);
@@ -226,27 +228,26 @@
 
     function drawPoses(poses) {
       for (const pose of poses) {
-        // Draw keypoints
+        // Draw each keypoint.
         for (const keypoint of pose.keypoints) {
           if (keypoint.score > 0.3) {
-            // Draw a small circle
             ctx.beginPath();
             ctx.arc(keypoint.x, keypoint.y, 5, 0, 2 * Math.PI);
             ctx.fillStyle = 'red';
             ctx.fill();
 
-            // Optionally label each keypoint
+            // Optionally label keypoints.
             ctx.fillStyle = 'white';
             ctx.fillText(keypoint.name, keypoint.x + 6, keypoint.y + 2);
           }
         }
-        // Draw skeleton
+        // Draw the skeleton.
         drawSkeleton(pose);
       }
     }
 
     function drawSkeleton(pose) {
-      // Build a map from name->keypoint
+      // Build a map from keypoint name to keypoint.
       const kpMap = {};
       pose.keypoints.forEach(kp => {
         kpMap[kp.name] = kp;
@@ -255,7 +256,7 @@
       ctx.strokeStyle = 'green';
       ctx.lineWidth = 3;
 
-      // Draw each connection
+      // Draw each connection in the skeleton.
       for (const [kp1, kp2] of connections) {
         const keypoint1 = kpMap[kp1];
         const keypoint2 = kpMap[kp2];
@@ -269,7 +270,7 @@
       }
     }
 
-    // Initialize on page load
+    // Initialize the app on page load.
     window.onload = init;
   </script>
 </body>
