@@ -130,7 +130,7 @@
       ctx.fillText(`${side} Kick!`, side === 'Left' ? 50 : 450, 50);
     }
 
-    drawSkeleton(pose) {
+    function drawSkeleton(pose) {
       const kpMap = {};
       pose.keypoints.forEach(kp => {
         kpMap[kp.name] = kp;
