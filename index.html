@@ -2,18 +2,29 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Kick Detector - Initiator</title>
+  <title>Pose Detection Test</title>
+  <!-- TensorFlow.js and Pose Detection libraries -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
+
   <style>
-    #video-container {
+    body {
+      margin: 0; 
+      padding: 0;
+      text-align: center;
+      background: #f3f3f3;
+      font-family: sans-serif;
+    }
+    #videoContainer {
       position: relative;
       display: inline-block;
     }
     video, canvas {
-      max-width: 100%;
+      width: 640px;  /* Adjust as you like */
+      height: 480px; /* Adjust as you like */
+      border: 1px solid #aaa;
     }
     canvas {
       position: absolute;
@@ -21,316 +32,152 @@
       left: 0;
       pointer-events: none;
     }
-    #signaling {
-      margin-top: 20px;
-      padding: 10px;
-      border: 1px solid #aaa;
-    }
-    textarea {
-      width: 100%;
-      margin-bottom: 10px;
-    }
-    button {
-      margin-bottom: 10px;
+    #status {
+      margin: 10px 0;
+      font-weight: bold;
     }
   </style>
 </head>
 <body>
-  <h1>Kick Detector - Initiator</h1>
-  <div id="video-container">
-    <video id="video" playsinline autoplay></video>
-    <canvas id="overlay"></canvas>
-  </div>
-  <p id="calibrationMessage">Align yourself with the camera.</p>
-  <button onclick="startCalibration()">Start Calibration</button>
-  <button onclick="startKickDetection()" disabled>Start Game</button>
+  <h1>Continuous Pose Detection (MoveNet)</h1>
+  <p id="status">Loading model...</p>
 
-  <div id="signaling">
-    <h2>Manual Signaling (Initiator)</h2>
-    <label for="localOffer">Local Offer (send this to Responder):</label>
-    <textarea id="localOffer" rows="8" readonly></textarea>
-    <br>
-    <label for="localICE">Local ICE Candidates (send these to Responder):</label>
-    <textarea id="localICE" rows="8" readonly></textarea>
-    <br>
-    <label for="remoteAnswer">Remote Answer (paste from Responder):</label>
-    <textarea id="remoteAnswer" rows="8"></textarea>
-    <br>
-    <button onclick="setRemoteAnswer()">Set Remote Answer</button>
-    <br>
-    <label for="remoteICE">Remote ICE Candidates (paste from Responder, one per line):</label>
-    <textarea id="remoteICE" rows="8"></textarea>
-    <br>
-    <button onclick="addRemoteICE()">Add Remote ICE Candidates</button>
+  <div id="videoContainer">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="overlay"></canvas>
   </div>
 
   <script>
-    // Global variables
-    let detector, video, canvas, ctx, peerConnection, dataChannel;
-    let initialLeftAnkleY, initialRightAnkleY;
-    let previousLeftAnkleY, previousRightAnkleY; // For kick detection velocity
-    let kickCooldown = 0; // Cooldown timer
-    let isRunning = true;  // Controls the pose detection loop
-    let rafId;             // RequestAnimationFrame ID
+    let video, canvas, ctx;
+    let detector;
+    let animationId;
 
-    // Set up video stream
-    async function setupVideo(facingMode) {
-      video = document.getElementById("video");
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode }
-      });
-      video.srcObject = stream;
-      return new Promise(resolve => {
-        video.onloadedmetadata = () => resolve();
-      });
-    }
+    const statusEl = document.getElementById('status');
 
-    // Update canvas dimensions to match video
-    function updateCanvasSize() {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-    }
+    // List of edges to connect keypoints into a skeleton
+    const connections = [
+      ['nose', 'left_eye'], ['nose', 'right_eye'],
+      ['left_eye', 'left_ear'], ['right_eye', 'right_ear'],
+      ['nose', 'left_shoulder'], ['nose', 'right_shoulder'],
+      ['left_shoulder', 'left_elbow'], ['right_shoulder', 'right_elbow'],
+      ['left_elbow', 'left_wrist'], ['right_elbow', 'right_wrist'],
+      ['left_shoulder', 'right_shoulder'],
+      ['left_shoulder', 'left_hip'], ['right_shoulder', 'right_hip'],
+      ['left_hip', 'right_hip'],
+      ['left_hip', 'left_knee'], ['right_hip', 'right_knee'],
+      ['left_knee', 'left_ankle'], ['right_knee', 'right_ankle']
+    ];
 
-    // Stop all video tracks
-    function stopCamera() {
-      let stream = video.srcObject;
-      if (stream) stream.getTracks().forEach(track => track.stop());
-    }
+    async function init() {
+      // Grab elements
+      video = document.getElementById('video');
+      canvas = document.getElementById('overlay');
+      ctx = canvas.getContext('2d');
 
-    // Calibration: Use selfie camera to initialize detector and set initial ankle positions
-    async function startCalibration() {
-      document.getElementById("calibrationMessage").innerText = "Calibrating...";
-      await setupVideo("user"); // Selfie camera
-      
-      // Set up canvas once video is ready
-      canvas = document.getElementById("overlay");
-      ctx = canvas.getContext("2d");
-      updateCanvasSize();
+      // 1) Setup camera
+      await setupCamera();
 
-      // Load the MoveNet Lightning model
+      // 2) Create the MoveNet detector
+      statusEl.textContent = 'Loading MoveNet model...';
       const detectorConfig = { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING };
       detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, detectorConfig);
+      statusEl.textContent = 'Model loaded! Starting detection...';
 
-      const interval = setInterval(async () => {
-        const poses = await detector.estimatePoses(video);
-        if (poses.length === 0) {
-          document.getElementById("calibrationMessage").innerText = "No person detected.";
-          return;
-        }
-
-        const keypoints = poses[0].keypoints;
-        const leftAnkle = keypoints.find(k => k.name === 'left_ankle');
-        const rightAnkle = keypoints.find(k => k.name === 'right_ankle');
-        const nose = keypoints.find(k => k.name === 'nose');
-
-        if (!leftAnkle || !rightAnkle) {
-          document.getElementById("calibrationMessage").innerText = "Step back to fit in frame.";
-        } else if (!nose || nose.y > video.videoHeight * 0.6) {
-          document.getElementById("calibrationMessage").innerText = "Raise the phone higher.";
-        } else {
-          clearInterval(interval);
-          document.getElementById("calibrationMessage").innerText = "Calibration complete!";
-          document.querySelector("button[onclick='startKickDetection()']").disabled = false;
-
-          // Store initial ankle positions
-          initialLeftAnkleY = leftAnkle.y;
-          initialRightAnkleY = rightAnkle.y;
-          previousLeftAnkleY = leftAnkle.y;
-          previousRightAnkleY = rightAnkle.y;
-        }
-      }, 500);
+      // 3) Start the detection loop
+      detectPose();
     }
 
-    // Combined pose detection and kick detection loop using requestAnimationFrame
+    async function setupCamera() {
+      // Request webcam
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: 640, height: 480 },
+        audio: false
+      });
+      video.srcObject = stream;
+
+      // Wait for the video to be ready
+      return new Promise(resolve => {
+        video.onloadedmetadata = () => {
+          video.play();
+          // Match canvas to video size
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          resolve();
+        };
+      });
+    }
+
     async function detectPose() {
-      if (!isRunning) return;
-      
-      if (video.readyState === 4) {
-        // Draw video frame on the canvas
+      // The main detection + draw loop
+      animationId = requestAnimationFrame(detectPose);
+
+      if (!detector) return;
+      if (video.readyState < 2) return; // not fully playing
+
+      try {
+        // Estimate poses
+        const poses = await detector.estimatePoses(video);
+
+        // Draw video onto canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        try {
-          const poses = await detector.estimatePoses(video);
-          // Draw poses on the canvas
+        // Draw the detected pose(s)
+        if (poses && poses.length > 0) {
           drawPoses(poses);
-          
-          // Perform kick detection using the same pose data
-          if (poses.length > 0) {
-            const keypoints = poses[0].keypoints;
-            const leftAnkle = keypoints.find(k => k.name === 'left_ankle');
-            const rightAnkle = keypoints.find(k => k.name === 'right_ankle');
-            if (leftAnkle && rightAnkle) {
-              const kickThresholdPercentage = 0.05; // 5% of video height
-              const kickThreshold = video.videoHeight * kickThresholdPercentage;
-              const downwardVelocityThreshold = 10; // Adjust as needed
-              let kick = null;
-
-              if (kickCooldown > 0) {
-                kickCooldown--;
-              } else {
-                // Left Kick Detection
-                const leftAnkleVelocity = previousLeftAnkleY - leftAnkle.y; // Positive => downward movement
-                if (leftAnkle.y < initialLeftAnkleY - kickThreshold && leftAnkleVelocity > downwardVelocityThreshold) {
-                  console.log("Left kick detected");
-                  kick = { type: "left_kick", position: leftAnkle };
-                  kickCooldown = 10; // 10 frames cooldown
-                }
-                // Right Kick Detection
-                const rightAnkleVelocity = previousRightAnkleY - rightAnkle.y;
-                if (rightAnkle.y < initialRightAnkleY - kickThreshold && rightAnkleVelocity > downwardVelocityThreshold) {
-                  console.log("Right kick detected");
-                  kick = { type: "right_kick", position: rightAnkle };
-                  kickCooldown = 10;
-                }
-              }
-              if (kick) sendKickData(kick);
-
-              // Update previous ankle positions
-              previousLeftAnkleY = leftAnkle.y;
-              previousRightAnkleY = rightAnkle.y;
-            }
-          }
-        } catch (error) {
-          console.error('Error detecting poses:', error);
         }
+      } catch (err) {
+        console.error('Pose estimation error:', err);
       }
-      rafId = requestAnimationFrame(detectPose);
     }
 
-    // Draw all detected poses and skeletons
     function drawPoses(poses) {
       for (const pose of poses) {
         // Draw keypoints
         for (const keypoint of pose.keypoints) {
           if (keypoint.score > 0.3) {
+            // Draw a small circle
             ctx.beginPath();
             ctx.arc(keypoint.x, keypoint.y, 5, 0, 2 * Math.PI);
             ctx.fillStyle = 'red';
             ctx.fill();
-            // Optionally, draw the keypoint name
+
+            // Optionally label each keypoint
             ctx.fillStyle = 'white';
-            ctx.fillText(keypoint.name, keypoint.x + 10, keypoint.y + 5);
+            ctx.fillText(keypoint.name, keypoint.x + 6, keypoint.y + 2);
           }
         }
-        // Draw skeleton if there are enough keypoints
-        if (pose.keypoints.length > 5) {
-          drawSkeleton(pose);
-        }
+        // Draw skeleton
+        drawSkeleton(pose);
       }
     }
 
-    // Draw skeleton connections for a given pose
     function drawSkeleton(pose) {
-      const connections = [
-        ['nose', 'left_eye'], ['nose', 'right_eye'],
-        ['left_eye', 'left_ear'], ['right_eye', 'right_ear'],
-        ['nose', 'left_shoulder'], ['nose', 'right_shoulder'],
-        ['left_shoulder', 'left_elbow'], ['right_shoulder', 'right_elbow'],
-        ['left_elbow', 'left_wrist'], ['right_elbow', 'right_wrist'],
-        ['left_shoulder', 'right_shoulder'],
-        ['left_shoulder', 'left_hip'], ['right_shoulder', 'right_hip'],
-        ['left_hip', 'right_hip'],
-        ['left_hip', 'left_knee'], ['right_hip', 'right_knee'],
-        ['left_knee', 'left_ankle'], ['right_knee', 'right_ankle']
-      ];
-
-      // Create a map for quick lookup
-      const keypointMap = {};
-      pose.keypoints.forEach(keypoint => {
-        keypointMap[keypoint.name] = keypoint;
+      // Build a map from name->keypoint
+      const kpMap = {};
+      pose.keypoints.forEach(kp => {
+        kpMap[kp.name] = kp;
       });
 
       ctx.strokeStyle = 'green';
-      ctx.lineWidth = 4;
+      ctx.lineWidth = 3;
 
-      for (const [p1Name, p2Name] of connections) {
-        const p1 = keypointMap[p1Name];
-        const p2 = keypointMap[p2Name];
-
-        if (p1 && p2 && p1.score > 0.3 && p2.score > 0.3) {
+      // Draw each connection
+      for (const [kp1, kp2] of connections) {
+        const keypoint1 = kpMap[kp1];
+        const keypoint2 = kpMap[kp2];
+        if (keypoint1 && keypoint2 &&
+            keypoint1.score > 0.3 && keypoint2.score > 0.3) {
           ctx.beginPath();
-          ctx.moveTo(p1.x, p1.y);
-          ctx.lineTo(p2.x, p2.y);
+          ctx.moveTo(keypoint1.x, keypoint1.y);
+          ctx.lineTo(keypoint2.x, keypoint2.y);
           ctx.stroke();
         }
       }
     }
 
-    // Kick detection and starting the detection loop
-    async function startKickDetection() {
-      document.getElementById("calibrationMessage").innerText = "Detecting kicks and poses...";
-      
-      // Ensure detector is initialized
-      if (!detector) {
-        const detectorConfig = { modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING };
-        detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet, detectorConfig);
-      }
-
-      setupWebRTC();
-
-      // Start continuous combined pose and kick detection loop
-      detectPose();
-    }
-
-    // WebRTC setup for sending kick data
-    function setupWebRTC() {
-      peerConnection = new RTCPeerConnection();
-      dataChannel = peerConnection.createDataChannel("kickData");
-
-      dataChannel.onopen = () => console.log("WebRTC Data Channel Opened");
-
-      peerConnection.onicecandidate = event => {
-        if (event.candidate) {
-          const localICETextarea = document.getElementById("localICE");
-          localICETextarea.value += JSON.stringify(event.candidate) + "\n";
-          console.log("Local ICE candidate:", event.candidate);
-        }
-      };
-
-      peerConnection.createOffer().then(offer => {
-        return peerConnection.setLocalDescription(offer);
-      }).then(() => {
-        document.getElementById("localOffer").value = JSON.stringify(peerConnection.localDescription);
-        console.log("Local Offer created:", peerConnection.localDescription);
-      }).catch(console.error);
-    }
-
-    // Set remote answer from responder
-    function setRemoteAnswer() {
-      const remoteAnswerText = document.getElementById("remoteAnswer").value;
-      if (!remoteAnswerText) {
-        alert("Please paste the remote answer.");
-        return;
-      }
-      const answer = JSON.parse(remoteAnswerText);
-      peerConnection.setRemoteDescription(answer)
-        .then(() => console.log("Remote answer set."))
-        .catch(console.error);
-    }
-
-    // Add remote ICE candidates
-    function addRemoteICE() {
-      const remoteICEText = document.getElementById("remoteICE").value;
-      if (!remoteICEText) {
-        alert("Please paste remote ICE candidates.");
-        return;
-      }
-      const iceCandidates = remoteICEText.split("\n").filter(candidate => candidate.trim());
-      iceCandidates.forEach(candidateStr => {
-        const candidate = JSON.parse(candidateStr);
-        peerConnection.addIceCandidate(candidate)
-          .then(() => console.log("Added remote ICE candidate:", candidate))
-          .catch(console.error);
-      });
-    }
-
-    // Send kick data through the data channel
-    function sendKickData(kick) {
-      if (dataChannel.readyState === "open") {
-        dataChannel.send(JSON.stringify(kick));
-        console.log("Sent kick data:", kick);
-      }
-    }
+    // Initialize on page load
+    window.onload = init;
   </script>
 </body>
 </html>
