@@ -64,7 +64,12 @@
       const rightArmStart = new THREE.Vector3(0.5, 0.5, 0);
       const rightArmEnd = new THREE.Vector3(1, 0, 0);
 
-      const headGeometry = new THREE.BufferGeometry().setFromPoints([head, neck]);
+      const headGeometry = new THREE.SphereGeometry(0.2, 32, 32); // Radius, widthSegments, heightSegments
+      const headMaterial = new THREE.MeshBasicMaterial({color: 0x0000ff});
+      const headMesh = new THREE.Mesh(headGeometry, headMaterial);
+      headMesh.position.set(0, 1, 0); // Position the head
+
+      const headLin = new THREE.BufferGeometry().setFromPoints([head, neck]);
       const torsoGeometry = new THREE.BufferGeometry().setFromPoints([neck, torso]);
       const leftLegGeometry = new THREE.BufferGeometry().setFromPoints([leftLegStart, leftLegEnd]);
       const rightLegGeometry = new THREE.BufferGeometry().setFromPoints([rightLegStart, rightLegEnd]);
@@ -79,7 +84,8 @@
       const rightArm = new THREE.Line(rightArmGeometry, material);
 
       const stickFigureGroup = new THREE.Group();
-      stickFigureGroup.add(headLine);
+      stickFigureGroup.add(headMesh); // Add the head mesh
+      stickFigureGroup.add(headLin);
       stickFigureGroup.add(torsoLine);
       stickFigureGroup.add(leftLeg);
       stickFigureGroup.add(rightLeg);
