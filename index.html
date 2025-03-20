@@ -52,6 +52,11 @@
     <canvas id="overlay"></canvas>
   </div>
 
+  <div id="shareableUrlArea">
+        <p><strong>Shareable URL</strong></p>
+        <input type="text" id="shareableUrl" readonly />
+  </div>
+
   <script>
     let video, canvas, ctx, detector;
     const statusEl = document.getElementById('status');
@@ -199,16 +204,16 @@
     function updateShareableURL(param, value) {
         const url = new URL(window.location.href);
         url.search = `?${param}=${value}`;
-        // Update the URL in a visible element if needed
+        document.getElementById('shareableUrl').value = url.toString();
     }
 
     async function startWebRTC() {
-    }
       const configuration = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-      pc = new RTCPeerConnection(configuration);    window.onload = init;
+      pc = new RTCPeerConnection(configuration);
 
       pc.onicecandidate = e => {
-          if (!e.candidate) {              const compressed = compressSDP(pc.localDescription);
+          if (!e.candidate) {
+              const compressed = compressSDP(pc.localDescription);
               updateShareableURL('offer', compressed);
               console.log("Share this offer URL:", window.location.href);
           }
