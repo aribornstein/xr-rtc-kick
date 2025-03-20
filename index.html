@@ -51,19 +51,6 @@
     <video id="video" autoplay playsinline muted></video>
     <canvas id="overlay"></canvas>
   </div>
-  <div>
-    <h2>Initiator (Offer)</h2>
-    <label for="offer">Offer (copy this to Receiver):</label>
-    <textarea id="offer" rows="8" readonly></textarea>
-    <br>
-    <label for="answer">Answer (paste answer from Receiver here):</label>
-    <textarea id="answer" rows="8"></textarea>
-    <br>
-    <button id="connectButton">Connect with Answer</button>
-    <br>
-    <label for="iceCandidates">ICE Candidates (paste candidates from Receiver here, one per line):</label>
-    <textarea id="iceCandidates" rows="8"></textarea>
-  </div>
 
   <script>
     let video, canvas, ctx, detector;
@@ -119,103 +106,6 @@
       return Math.atan2(midHip.y - nose.y, midHip.x - nose.x);
     }
 
-    let peerConnection;
-    let dataChannel;
-
-    async function createPeerConnection() {
-      peerConnection = new RTCPeerConnection();
-
-      dataChannel = peerConnection.createDataChannel("kickDataChannel");
-      dataChannel.onopen = () => console.log("Data channel opened");
-      dataChannel.onclose = () => console.log("Data channel closed");
-      dataChannel.onerror = (error) => console.error("Data channel error:", error);
-
-      peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-          console.log("Local ICE candidate:", event.candidate);
-        }
-      };
-
-      peerConnection.onicegatheringstatechange = () => {
-        console.log(`ICE gathering state changed: ${peerConnection.iceGatheringState}`);
-      };
-
-      return peerConnection;
-    }
-
-    // Compress the signaling data to a Base36 string.
-    function compressSignaling(data) {
-        const json = JSON.stringify(data);
-        const compressed = LZString.compressToUTF16(json);
-        let base36Str = "";
-        for (let i = 0; i < compressed.length; i++) {
-            const charCode = compressed.charCodeAt(i);
-            const base36 = charCode.toString(36).padStart(2, '0'); // Pad to 2 digits
-            base36Str += base36;
-        }
-        return base36Str;
-    }
-
-    // Decompress from the Base36 string back to the original object.
-    function decompressSignaling(base36Str) {
-        let chars = [];
-        // Since each char code in UTF16 is encoded to a variable-length base36 string,
-        // you'll need a known fixed length. For simplicity assume we pad each code to 2 digits.
-        for (let i = 0; i < base36Str.length; i += 2) {
-            const code = parseInt(base36Str.substr(i, 2), 36);
-            chars.push(String.fromCharCode(code));
-        }
-        const decompressed = LZString.decompressFromUTF16(chars.join(''));
-        return JSON.parse(decompressed);
-    }
-
-    async function createOffer() {
-      const pc = await createPeerConnection();
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      const compressedOffer = compressSignaling(pc.localDescription);
-      document.getElementById("offer").value = compressedOffer;
-      return pc;
-    }
-
-    async function connectWithAnswer() {
-      let answerText = document.getElementById("answer").value;
-      // If using compression, decompress first
-      const answerObj = decompressSignaling(answerText);
-      try {
-        await peerConnection.setRemoteDescription(answerObj);
-        console.log("Remote description set from answer.");
-      } catch (e) {
-        console.error("Error setting remote description:", e);
-        alert("Invalid answer format.");
-        return;
-      }
-
-      const iceCandidatesText = document.getElementById("iceCandidates").value;
-
-      if (iceCandidatesText) {
-        const iceCandidateLines = iceCandidatesText.trim().split('\n');
-        for (const line of iceCandidateLines) {
-          if (line.trim() === '') continue;
-          try {
-            const candidate = JSON.parse(line);
-            await peerConnection.addIceCandidate(candidate);
-            console.log("Added remote ICE candidate:", candidate);
-          } catch (e) {
-            console.warn("Error adding ICE candidate:", e);
-          }
-        }
-      }
-    }
-
-    function sendKick(side) {
-      if (dataChannel && dataChannel.readyState === 'open') {
-        dataChannel.send(JSON.stringify({ type: side === 'Left' ? 'left_kick' : 'right_kick' }));
-      } else {
-        console.log("Data channel not open, cannot send kick.");
-      }
-    }
-
     function detectKick(foot, hip, ankle, verticalAngle, side) {
       if (hip.score < 0.3 || ankle.score < 0.3 || foot.cooldown) return;
       const legAngle = Math.atan2(ankle.y - hip.y, ankle.x - hip.x);
@@ -231,7 +121,7 @@
         if (diff > foot.maxDiff) foot.maxDiff = diff;
         if (diff < foot.maxDiff * PEAK_DROP_RATIO) {
           indicateKick(side);
-          sendKick(side); // Send kick data over WebRTC
+          // Kick detection indicated (WebRTC removed)
           foot.triggerCooldown();
           foot.state = 'retracting';
         }
@@ -287,9 +177,6 @@
       detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet);
       statusEl.textContent = 'Detection Started';
 
-      // Create offer and start WebRTC
-      await createOffer();
-
       detect();
     }
 
@@ -313,7 +200,6 @@
       detectKick(rightFoot, kpMap['right_hip'], kpMap['right_ankle'], vRef, 'Right');
     }
 
-    document.getElementById("connectButton").addEventListener("click", connectWithAnswer);
     window.onload = init;
   </script>
 </body>
