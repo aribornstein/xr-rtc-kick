@@ -149,9 +149,9 @@
         const compressed = LZString.compressToUTF16(json);
         let base36Str = "";
         for (let i = 0; i < compressed.length; i++) {
-            const hex = compressed.charCodeAt(i).toString(16).padStart(2, '0');
-            const num = parseInt(hex, 16);
-            base36Str += num.toString(36);
+            const charCode = compressed.charCodeAt(i);
+            const base36 = charCode.toString(36).padStart(2, '0'); // Pad to 2 digits
+            base36Str += base36;
         }
         return base36Str;
     }
