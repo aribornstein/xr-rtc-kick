@@ -266,7 +266,7 @@
     function drawKeypoints(pose, scaleX, scaleY) {
       for (const keypoint of pose.keypoints) {
         if (keypoint.score > 0.3) {
-          ctx.font = 'bold 10px Arial';
+          ctx.font = 'bold 7px Arial';
           ctx.beginPath();
           ctx.arc(keypoint.x * scaleX, keypoint.y * scaleY, 5, 0, 2 * Math.PI);
           ctx.fillStyle = 'red';
