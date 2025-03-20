@@ -43,6 +43,8 @@
 
   <!-- Three.js for stick figure visualization -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
+
   <script>
     let scene, camera, renderer, stickFigure, peerConnection, dataChannel;
 
@@ -139,6 +141,31 @@
       };
     }
 
+    // Decompress from a Base36 string back to the original object.
+    function decompressSignaling(base36Str) {
+        let chars = [];
+        // Each char code was padded to 2 digits
+        for (let i = 0; i < base36Str.length; i += 2) {
+            const code = parseInt(base36Str.substr(i, 2), 36);
+            chars.push(String.fromCharCode(code));
+        }
+        const decompressed = LZString.decompressFromUTF16(chars.join(''));
+        return JSON.parse(decompressed);
+    }
+
+    // Add this helper function for compressing signaling data.
+    function compressSignaling(data) {
+        const json = JSON.stringify(data);
+        const compressed = LZString.compressToUTF16(json);
+        let base36Str = "";
+        for (let i = 0; i < compressed.length; i++) {
+            const hex = compressed.charCodeAt(i).toString(16).padStart(2, '0');
+            const num = parseInt(hex, 16);
+            base36Str += num.toString(36);
+        }
+        return base36Str;
+    }
+
     // Process received kick data and animate stick figure
     function handleKickData(data) {
       console.log("Received kick data:", data);
@@ -176,14 +203,15 @@
           }
 
           if (data.sdp) {
-            // Set the remote description with the received offer
+            // Decompress the SDP from the compressed Base36 string
+            const decompressedSDP = decompressSignaling(data.sdp);
             peerConnection.setRemoteDescription(new RTCSessionDescription({
-                type: data.type, // Use the 'type' from the signaling data
-                sdp: data.sdp
+                type: decompressedSDP.type, // Use the decompressed 'type'
+                sdp: decompressedSDP.sdp    // Use the decompressed 'sdp'
               }))
               .then(() => {
                 console.log("Remote SDP set");
-                if (data.type === "offer") {
+                if (decompressedSDP.type === "offer") {
                   // Create an answer to the offer
                   return peerConnection.createAnswer();
                 }
@@ -191,7 +219,8 @@
               .then(answer => {
                 if (answer) {
                   return peerConnection.setLocalDescription(answer).then(() => {
-                    document.getElementById("localAnswer").value = JSON.stringify(peerConnection.localDescription);
+                    // Compress the answer before outputting
+                    document.getElementById("localAnswer").value = compressSignaling(peerConnection.localDescription);
                     console.log("Answer created:", peerConnection.localDescription);
                   });
                 }

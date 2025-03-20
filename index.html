@@ -8,6 +8,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
 
   <style>
     body {
@@ -142,32 +143,55 @@
       return peerConnection;
     }
 
+    // Compress the signaling data to a Base36 string.
+    function compressSignaling(data) {
+        const json = JSON.stringify(data);
+        const compressed = LZString.compressToUTF16(json);
+        let base36Str = "";
+        for (let i = 0; i < compressed.length; i++) {
+            const hex = compressed.charCodeAt(i).toString(16).padStart(2, '0');
+            const num = parseInt(hex, 16);
+            base36Str += num.toString(36);
+        }
+        return base36Str;
+    }
+
+    // Decompress from the Base36 string back to the original object.
+    function decompressSignaling(base36Str) {
+        let chars = [];
+        // Since each char code in UTF16 is encoded to a variable-length base36 string,
+        // you'll need a known fixed length. For simplicity assume we pad each code to 2 digits.
+        for (let i = 0; i < base36Str.length; i += 2) {
+            const code = parseInt(base36Str.substr(i, 2), 36);
+            chars.push(String.fromCharCode(code));
+        }
+        const decompressed = LZString.decompressFromUTF16(chars.join(''));
+        return JSON.parse(decompressed);
+    }
+
     async function createOffer() {
       const pc = await createPeerConnection();
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-      document.getElementById("offer").value = JSON.stringify(pc.localDescription);
+      const compressedOffer = compressSignaling(pc.localDescription);
+      document.getElementById("offer").value = compressedOffer;
       return pc;
     }
 
     async function connectWithAnswer() {
-      const answerText = document.getElementById("answer").value;
-      const iceCandidatesText = document.getElementById("iceCandidates").value;
-
-      if (!answerText) {
-        alert("Please paste the answer from the receiver.");
-        return;
-      }
-
+      let answerText = document.getElementById("answer").value;
+      // If using compression, decompress first
+      const answerObj = decompressSignaling(answerText);
       try {
-        const answer = JSON.parse(answerText);
-        await peerConnection.setRemoteDescription(answer);
+        await peerConnection.setRemoteDescription(answerObj);
         console.log("Remote description set from answer.");
       } catch (e) {
         console.error("Error setting remote description:", e);
         alert("Invalid answer format.");
         return;
       }
+
+      const iceCandidatesText = document.getElementById("iceCandidates").value;
 
       if (iceCandidatesText) {
         const iceCandidateLines = iceCandidatesText.trim().split('\n');
