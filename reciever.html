@@ -192,12 +192,16 @@
     });
 
     document.getElementById("connectButton").addEventListener("click", () => {
-      const signalingData = document.getElementById("signalingData").value;
-      if (signalingData) {
+      let signalingText = document.getElementById("signalingData").value.trim();
+      if (signalingText) {
         try {
-          const data = JSON.parse(signalingData);
+          // Check if the input starts like a JSON object or array.
+          if (!(signalingText.startsWith('{') || signalingText.startsWith('['))) {
+            throw new Error("Input does not start with a valid JSON character.");
+          }
+          const data = JSON.parse(signalingText);
           if (!data || (typeof data !== 'object')) {
-            console.error("Signaling data is not a valid JSON object:", signalingData);
+            console.error("Signaling data is not a valid JSON object:", signalingText);
             alert("Invalid signaling data: Not a JSON object.");
             return;
           }
@@ -236,7 +240,7 @@
             alert("Invalid signaling data: Missing 'sdp' or 'candidate'.");
           }
         } catch (error) {
-          console.error("Error parsing signaling data:", error);
+          console.error("Error parsing signaling data:", error, "Input:", signalingText);
           alert("Invalid signaling data format: " + error.message);
         }
       }
