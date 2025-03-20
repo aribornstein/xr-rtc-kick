@@ -28,7 +28,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script>
     let scene, camera, renderer, stickFigure;
-    // Removed WebRTC variables: peerConnection, dataChannel
+    let peerConnection;
 
     // Initialize Three.js scene
     function initThreeJS() {
@@ -128,8 +128,55 @@
       setTimeout(() => simulateKick("right_kick"), 1000);
     }, 2000);
 
+    function decompressSDP(str) {
+        try {
+            const decodedStr = decodeURIComponent(str); // Fix URL encoding issue
+            return JSON.parse(pako.inflate(Uint8Array.from(atob(decodedStr), c => c.charCodeAt(0)), { to: 'string' }));
+        } catch (error) {
+            console.error("Error decoding SDP:", error);
+            return null;
+        }
+    }
+
+    async function initializeReceiver() {
+      const configuration = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+      peerConnection = new RTCPeerConnection(configuration);
+
+      peerConnection.onicecandidate = e => {
+          if (!e.candidate) {
+              console.log("ICE gathering complete");
+          }
+      };
+
+      peerConnection.onconnectionstatechange = () => {
+          if (peerConnection.connectionState === 'connected') {
+              console.log("✅ Connection established!");
+          }
+      };
+
+      peerConnection.ondatachannel = e => {
+          const dataChannel = e.channel;
+          dataChannel.onopen = () => console.log("Data channel opened (receiver)");
+          dataChannel.onmessage = e => {
+              console.log("Received kick event: " + e.data);
+              simulateKick(e.data); // Call simulateKick with the received data
+          };
+      };
+
+      // Handle the answer from the URL
+      const answer = new URLSearchParams(window.location.search).get('answer');
+      if (answer) {
+          console.log("🟢 Response mode: Applying answer...");
+          const answerDesc = decompressSDP(answer);
+          await peerConnection.setRemoteDescription(answerDesc);
+      }
+    }
+
     // Initialize Three.js on page load
-    window.onload = initThreeJS;
+    window.onload = () => {
+      initThreeJS();
+      initializeReceiver();
+    };
   </script>
 </body>
 </html>

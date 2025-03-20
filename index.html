@@ -8,7 +8,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
 
   <style>
     body {
@@ -136,6 +136,12 @@
       ctx.textAlign = side === 'Left' ? 'left' : 'right';
       ctx.textBaseline = 'top';
       ctx.fillText(`${side} Kick!`, side === 'Left' ? 10 : canvas.width - 10, 10);
+
+      // Send kick data over the data channel
+      if (dc && dc.readyState === 'open') {
+        const kickEvent = side === 'Left' ? "left_kick" : "right_kick";
+        dc.send(kickEvent);
+      }
     }
 
     function drawSkeleton(pose, scaleX, scaleY) {
@@ -167,6 +173,75 @@
       }
     }
 
+    let pc = null;
+    let dc = null;
+
+    function compressSDP(desc) {
+        const json = JSON.stringify(desc);
+        const compressed = pako.deflate(json, { to: 'string' });
+        return encodeURIComponent(btoa(String.fromCharCode.apply(null, compressed))); // Ensure URL-safe encoding
+    }
+
+    function decompressSDP(str) {
+        try {
+            const decodedStr = decodeURIComponent(str); // Fix URL encoding issue
+            return JSON.parse(pako.inflate(Uint8Array.from(atob(decodedStr), c => c.charCodeAt(0)), { to: 'string' }));
+        } catch (error) {
+            console.error("Error decoding SDP:", error);
+            return null;
+        }
+    }
+
+    function getQueryParam(name) {
+        return new URLSearchParams(window.location.search).get(name);
+    }
+
+    function updateShareableURL(param, value) {
+        const url = new URL(window.location.href);
+        url.search = `?${param}=${value}`;
+        // Update the URL in a visible element if needed
+    }
+
+    async function startWebRTC() {
+    }
+      const configuration = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+      pc = new RTCPeerConnection(configuration);    window.onload = init;
+
+      pc.onicecandidate = e => {
+          if (!e.candidate) {              const compressed = compressSDP(pc.localDescription);
+              updateShareableURL('offer', compressed);
+              console.log("Share this offer URL:", window.location.href);
+          }
+      };
+
+      pc.onconnectionstatechange = () => {
+          if (pc.connectionState === 'connected') {
+              console.log("✅ Connection established!");
+          }
+      };
+
+      dc = pc.createDataChannel("kick-channel");
+      dc.onopen = () => console.log("Data channel opened");
+      dc.onmessage = e => console.log("Message from receiver: " + e.data);
+
+      const offerDesc = await pc.createOffer();
+      await pc.setLocalDescription(offerDesc);
+
+      // Retriever Mode (if offer is present in the URL)
+      const offer = getQueryParam('offer');
+      if (offer) {
+          console.log("🟡 Retriever mode: Received offer, generating answer...");
+          const offerDesc = decompressSDP(offer);
+          await pc.setRemoteDescription(offerDesc);
+
+          const answerDesc = await pc.createAnswer();
+          await pc.setLocalDescription(answerDesc);
+          const compressedAnswer = compressSDP(answerDesc);
+          updateShareableURL('answer', compressedAnswer);
+          console.log("🟡 Answer generated. Share this answer URL:", window.location.href);
+      }
+    }
+
     async function init() {
       video = document.getElementById('video');
       canvas = document.getElementById('overlay');
@@ -177,6 +252,7 @@
       detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet);
       statusEl.textContent = 'Detection Started';
 
+      await startWebRTC();
       detect();
     }
 
