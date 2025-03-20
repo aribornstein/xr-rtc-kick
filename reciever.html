@@ -149,8 +149,7 @@
             const code = parseInt(base36Str.substr(i, 2), 36);
             chars.push(String.fromCharCode(code));
         }
-        const decompressed = LZString.decompressFromUTF16(chars.join(''));
-        return JSON.parse(decompressed);
+        return LZString.decompressFromUTF16(chars.join(''));
     }
 
     // Add this helper function for compressing signaling data.
@@ -195,53 +194,35 @@
       let signalingText = document.getElementById("signalingData").value.trim();
       if (signalingText) {
         try {
-          // Check if the input starts like a JSON object or array.
-          if (!(signalingText.startsWith('{') || signalingText.startsWith('['))) {
-            throw new Error("Input does not start with a valid JSON character.");
-          }
-          const data = JSON.parse(signalingText);
-          if (!data || (typeof data !== 'object')) {
-            console.error("Signaling data is not a valid JSON object:", signalingText);
-            alert("Invalid signaling data: Not a JSON object.");
-            return;
-          }
-
-          if (data.sdp) {
-            // Decompress the SDP from the compressed Base36 string
-            const decompressedSDP = decompressSignaling(data.sdp);
-            peerConnection.setRemoteDescription(new RTCSessionDescription({
-                type: decompressedSDP.type, // Use the decompressed 'type'
-                sdp: decompressedSDP.sdp    // Use the decompressed 'sdp'
-              }))
-              .then(() => {
-                console.log("Remote SDP set");
-                if (decompressedSDP.type === "offer") {
+          // Decompress the entire input string into a JSON string, then parse it.
+          const decompressedSDPString = decompressSignaling(signalingText);
+          console.log("Decompressed SDP string:", decompressedSDPString);
+          const decompressedSDP = JSON.parse(decompressedSDPString);
+          
+          peerConnection.setRemoteDescription(new RTCSessionDescription({
+              type: decompressedSDP.type,
+              sdp: decompressedSDP.sdp
+          }))
+          .then(() => {
+              console.log("Remote SDP set");
+              if (decompressedSDP.type === "offer") {
                   // Create an answer to the offer
                   return peerConnection.createAnswer();
-                }
-              })
-              .then(answer => {
-                if (answer) {
+              }
+          })
+          .then(answer => {
+              if (answer) {
                   return peerConnection.setLocalDescription(answer).then(() => {
-                    // Compress the answer before outputting
-                    document.getElementById("localAnswer").value = compressSignaling(peerConnection.localDescription);
-                    console.log("Answer created:", peerConnection.localDescription);
+                      // Compress the answer before outputting
+                      document.getElementById("localAnswer").value = compressSignaling(peerConnection.localDescription);
+                      console.log("Answer created:", peerConnection.localDescription);
                   });
-                }
-              })
-              .catch(console.error);
-          } else if (data.candidate) {
-            // Add received ICE candidate
-            peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate))
-              .then(() => console.log("Added remote ICE candidate"))
-              .catch(console.error);
-          } else {
-            console.error("Signaling data missing 'sdp' or 'candidate' property:", data);
-            alert("Invalid signaling data: Missing 'sdp' or 'candidate'.");
-          }
+              }
+          })
+          .catch(console.error);
         } catch (error) {
-          console.error("Error parsing signaling data:", error, "Input:", signalingText);
-          alert("Invalid signaling data format: " + error.message);
+          console.error("Error decompressing or parsing signaling data:", error, signalingText);
+          alert("Invalid compressed signaling data: " + error.message);
         }
       }
     });
