@@ -6,6 +6,7 @@
   <style>
     body { margin: 0; overflow: hidden; }
     canvas { display: block; }
+    /* Optionally remove UI controls no longer needed */
     #controls {
       position: absolute;
       top: 10px;
@@ -15,38 +16,19 @@
       padding: 10px;
       border-radius: 5px;
     }
-    textarea {
-      width: 100%;
-      margin-bottom: 10px;
-    }
-    button {
-      margin-bottom: 10px;
-    }
+    textarea, button, label { display: none; }
   </style>
 </head>
 <body>
   <div id="controls">
-    <h2>Receiver (Responder)</h2>
-    <button id="startButton">Initialize WebRTC</button>
-    <br>
-    <label for="signalingData">Paste signaling data from Initiator (Offer/ICE):</label>
-    <textarea id="signalingData" rows="8" placeholder='{"sdp":{...}} or {"candidate":{...}}'></textarea>
-    <br>
-    <button id="connectButton">Connect</button>
-    <br>
-    <label for="localAnswer">Local Answer (send this back to Initiator):</label>
-    <textarea id="localAnswer" rows="8" readonly></textarea>
-    <br>
-    <label for="localICE">Local ICE Candidates (send these to Initiator):</label>
-    <textarea id="localICE" rows="8" readonly></textarea>
+    <h2>Receiver (Visualization Only)</h2>
   </div>
 
   <!-- Three.js for stick figure visualization -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
-
   <script>
-    let scene, camera, renderer, stickFigure, peerConnection, dataChannel;
+    let scene, camera, renderer, stickFigure;
+    // Removed WebRTC variables: peerConnection, dataChannel
 
     // Initialize Three.js scene
     function initThreeJS() {
@@ -69,7 +51,6 @@
     function createStickFigure() {
       const material = new THREE.LineBasicMaterial({ color: 0x0000ff });
 
-      // Define points for the stick figure
       const head = new THREE.Vector3(0, 1, 0);
       const neck = new THREE.Vector3(0, 0.5, 0);
       const torso = new THREE.Vector3(0, 0, 0);
@@ -82,7 +63,6 @@
       const rightArmStart = new THREE.Vector3(0.5, 0.5, 0);
       const rightArmEnd = new THREE.Vector3(1, 0, 0);
 
-      // Create geometries for each limb
       const headGeometry = new THREE.BufferGeometry().setFromPoints([head, neck]);
       const torsoGeometry = new THREE.BufferGeometry().setFromPoints([neck, torso]);
       const leftLegGeometry = new THREE.BufferGeometry().setFromPoints([leftLegStart, leftLegEnd]);
@@ -90,15 +70,13 @@
       const leftArmGeometry = new THREE.BufferGeometry().setFromPoints([leftArmStart, leftArmEnd]);
       const rightArmGeometry = new THREE.BufferGeometry().setFromPoints([rightArmStart, rightArmEnd]);
       
-      // Create lines for each limb
       const headLine = new THREE.Line(headGeometry, material);
       const torsoLine = new THREE.Line(torsoGeometry, material);
       const leftLeg = new THREE.Line(leftLegGeometry, material);
       const rightLeg = new THREE.Line(rightLegGeometry, material);
-      const leftArm =  new THREE.Line(leftArmGeometry, material);
+      const leftArm = new THREE.Line(leftArmGeometry, material);
       const rightArm = new THREE.Line(rightArmGeometry, material);
 
-      // Create a group and add the limbs to it
       const stickFigureGroup = new THREE.Group();
       stickFigureGroup.add(headLine);
       stickFigureGroup.add(torsoLine);
@@ -120,61 +98,13 @@
       renderer.render(scene, camera);
     }
 
-    // Initialize WebRTC as receiver (responder)
-    function initWebRTC() {
-      peerConnection = new RTCPeerConnection();
-
-      // Listen for incoming data channels (from initiator)
-      peerConnection.ondatachannel = (event) => {
-        dataChannel = event.channel;
-        dataChannel.onopen = () => console.log("Data channel opened");
-        dataChannel.onmessage = (event) => handleKickData(JSON.parse(event.data));
-      };
-
-      // Handle ICE candidates
-      peerConnection.onicecandidate = event => {
-        if (event.candidate) {
-          const localICETextarea = document.getElementById("localICE");
-          localICETextarea.value += JSON.stringify(event.candidate) + "\n";
-          console.log("Local ICE candidate:", event.candidate);
-        }
-      };
-    }
-
-    // Decompress from a Base36 string back to the original object.
-    function decompressSignaling(base36Str) {
-        let chars = [];
-        // Each char code was padded to 2 digits
-        for (let i = 0; i < base36Str.length; i += 2) {
-            const code = parseInt(base36Str.substr(i, 2), 36);
-            chars.push(String.fromCharCode(code));
-        }
-        return LZString.decompressFromUTF16(chars.join(''));
-    }
-
-    // Add this helper function for compressing signaling data.
-    function compressSignaling(data) {
-        const json = JSON.stringify(data);
-        const compressed = LZString.compressToUTF16(json);
-        let base36Str = "";
-        for (let i = 0; i < compressed.length; i++) {
-            const hex = compressed.charCodeAt(i).toString(16).padStart(2, '0');
-            const num = parseInt(hex, 16);
-            base36Str += num.toString(36);
-        }
-        return base36Str;
-    }
-
-    // Process received kick data and animate stick figure
-    function handleKickData(data) {
-      console.log("Received kick data:", data);
+    // Example function to animate a kick (simulate receiving kick data)
+    function simulateKick(direction) {
       const kickRotation = Math.PI / 4; // Define kick rotation amount
 
-      if (data.type === "left_kick") {
-        // Rotate left leg for left kick
+      if (direction === "left_kick") {
         stickFigure.leftLeg.rotation.x = kickRotation;
-      } else if (data.type === "right_kick") {
-        // Rotate right leg for right kick
+      } else if (direction === "right_kick") {
         stickFigure.rightLeg.rotation.x = -kickRotation;
       }
 
@@ -185,47 +115,11 @@
       }, 500);
     }
 
-    // Event listeners for UI buttons
-    document.getElementById("startButton").addEventListener("click", () => {
-      initWebRTC();
-    });
-
-    document.getElementById("connectButton").addEventListener("click", () => {
-      let signalingText = document.getElementById("signalingData").value.trim();
-      if (signalingText) {
-        try {
-          // Decompress the entire input string into a JSON string, then parse it.
-          const decompressedSDPString = decompressSignaling(signalingText);
-          console.log("Decompressed SDP string:", decompressedSDPString);
-          const decompressedSDP = JSON.parse(decompressedSDPString);
-          
-          peerConnection.setRemoteDescription(new RTCSessionDescription({
-              type: decompressedSDP.type,
-              sdp: decompressedSDP.sdp
-          }))
-          .then(() => {
-              console.log("Remote SDP set");
-              if (decompressedSDP.type === "offer") {
-                  // Create an answer to the offer
-                  return peerConnection.createAnswer();
-              }
-          })
-          .then(answer => {
-              if (answer) {
-                  return peerConnection.setLocalDescription(answer).then(() => {
-                      // Compress the answer before outputting
-                      document.getElementById("localAnswer").value = compressSignaling(peerConnection.localDescription);
-                      console.log("Answer created:", peerConnection.localDescription);
-                  });
-              }
-          })
-          .catch(console.error);
-        } catch (error) {
-          console.error("Error decompressing or parsing signaling data:", error, signalingText);
-          alert("Invalid compressed signaling data: " + error.message);
-        }
-      }
-    });
+    // For testing: simulate a left and right kick alternately every 2 seconds
+    setInterval(() => {
+      simulateKick("left_kick");
+      setTimeout(() => simulateKick("right_kick"), 1000);
+    }, 2000);
 
     // Initialize Three.js on page load
     window.onload = initThreeJS;
