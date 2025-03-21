@@ -214,8 +214,9 @@
       pc.onicecandidate = e => {
           if (!e.candidate) {
               const compressed = compressSDP(pc.localDescription);
-              updateShareableURL('offer', compressed);
-              console.log("Share this offer URL:", window.location.href);
+              const receiverUrl = `${window.location.origin}/receiver.html?offer=${compressed}`;
+              updateShareableURL('offer', receiverUrl);
+              console.log("Share this offer URL:", receiverUrl);
           }
       };
 
