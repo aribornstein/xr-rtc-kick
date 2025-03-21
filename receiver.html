@@ -1,20 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8">
   <title>Kick Detector and Visualizer - Receiver</title>
   <style>
-    body {
-      margin: 0;
-      overflow: hidden;
-      background-color: white;
-    }
-
-    canvas {
-      display: block;
-    }
-
+    body { margin: 0; overflow: hidden; background-color: white; }
+    canvas { display: block; }
     /* Optionally remove UI controls no longer needed */
     #controls {
       position: absolute;
@@ -25,23 +16,17 @@
       padding: 10px;
       border-radius: 5px;
     }
-
     #shareableUrlArea {
-      margin-top: 100px;
-      /* Add margin to move it below controls */
-      position: relative;
-      /* Ensure proper positioning context */
+      margin-top: 100px; /* Add margin to move it below controls */
+      position: relative; /* Ensure proper positioning context */
       padding: 10px;
       background: rgba(255, 255, 255, 0.8);
       border-radius: 5px;
-      width: fit-content;
-      /* Adjust width to content */
-      margin-left: 10px;
-      /* Align with the left edge of the controls */
+      width: fit-content; /* Adjust width to content */
+      margin-left: 10px; /* Align with the left edge of the controls */
     }
   </style>
 </head>
-
 <body>
   <div id="controls">
     <h2>Receiver (Visualization Only)</h2>
@@ -69,7 +54,7 @@
       camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
       camera.position.z = 5;
 
-      renderer = new THREE.WebGLRenderer({ antialias: true }); // Enable antialiasing
+      renderer = new THREE.WebGLRenderer({antialias: true}); // Enable antialiasing
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.setClearColor(0xffffff); // Set clear color to white
       document.body.appendChild(renderer.domElement);
@@ -98,7 +83,7 @@
       const rightArmEnd = new THREE.Vector3(1, 0, 0);
 
       const headGeometry = new THREE.SphereGeometry(0.2, 32, 32); // Radius, widthSegments, heightSegments
-      const headMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff });
+      const headMaterial = new THREE.MeshBasicMaterial({color: 0x0000ff});
       const headMesh = new THREE.Mesh(headGeometry, headMaterial);
       headMesh.position.set(0, 1, 0); // Position the head
 
@@ -108,7 +93,7 @@
       const rightLegGeometry = new THREE.BufferGeometry().setFromPoints([rightLegStart, rightLegEnd]);
       const leftArmGeometry = new THREE.BufferGeometry().setFromPoints([leftArmStart, leftArmEnd]);
       const rightArmGeometry = new THREE.BufferGeometry().setFromPoints([rightArmStart, rightArmEnd]);
-
+      
       const headLine = new THREE.Line(headGeometry, material);
       const torsoLine = new THREE.Line(torsoGeometry, material);
       const leftLeg = new THREE.Line(leftLegGeometry, material);
@@ -162,22 +147,21 @@
     // }, 2000);
 
     function decompressSDP(str) {
-      try {
-        const decodedStr = decodeURIComponent(str);
-        const uint8Arr = pako.inflate(atob(decodedStr), { to: 'string' });
-        const jsonString = new TextDecoder().decode(new Uint8Array(uint8Arr.split('').map(char => char.charCodeAt(0))));
-        return JSON.parse(jsonString);
-      } catch (error) {
-        console.error("Error decoding SDP:", error);
-        return null;
-      }
+        try {
+            const decodedStr = decodeURIComponent(str); // Fix URL encoding issue
+            return JSON.parse(pako.inflate(Uint8Array.from(atob(decodedStr), c => c.charCodeAt(0)), { to: 'string' }));
+        } catch (error) {
+            console.error("Error decoding SDP:", error);
+            return null;
+        }
     }
 
     function compressSDP(desc) {
-      const json = JSON.stringify(desc);
-      const compressed = pako.deflate(json, { to: 'string' });
-      return encodeURIComponent(btoa(String.fromCharCode.apply(null, compressed))); // Ensure URL-safe encoding
+        const json = JSON.stringify(desc);
+        const compressed = pako.deflate(json, { to: 'string' });
+        return encodeURIComponent(btoa(String.fromCharCode.apply(null, compressed))); // Ensure URL-safe encoding
     }
+
     function updateShareableURL(param, value) {
       const url = new URL(window.location.href);
       const pathSegments = url.pathname.split('/');
@@ -186,7 +170,7 @@
       document.getElementById('shareableUrl').value = shareableURL;
     }
 
-    document.getElementById('copyUrlButton').addEventListener('click', function () {
+    document.getElementById('copyUrlButton').addEventListener('click', function() {
       const shareableUrl = document.getElementById('shareableUrl');
       shareableUrl.select();
       shareableUrl.setSelectionRange(0, 99999); // For mobile devices
@@ -199,44 +183,44 @@
       peerConnection = new RTCPeerConnection(configuration);
 
       peerConnection.onicecandidate = e => {
-        if (!e.candidate) {
-          console.log("ICE gathering complete");
-        }
+          if (!e.candidate) {
+              console.log("ICE gathering complete");
+          }
       };
 
       peerConnection.onconnectionstatechange = () => {
-        if (peerConnection.connectionState === 'connected') {
-          console.log("✅ Connection established!");
-          document.getElementById('connectionStatus').textContent = '✅ Connection established!';
-        } else {
-          document.getElementById('connectionStatus').textContent = 'Connecting...';
-        }
+          if (peerConnection.connectionState === 'connected') {
+              console.log("✅ Connection established!");
+              document.getElementById('connectionStatus').textContent = '✅ Connection established!';
+          } else {
+              document.getElementById('connectionStatus').textContent = 'Connecting...';
+          }
       };
 
       peerConnection.ondatachannel = e => {
-        const dataChannel = e.channel;
-        dataChannel.onopen = () => console.log("Data channel opened (receiver)");
-        dataChannel.onmessage = e => {
-          console.log("Received kick event: " + e.data);
-          simulateKick(e.data); // Call simulateKick with the received data
-        };
+          const dataChannel = e.channel;
+          dataChannel.onopen = () => console.log("Data channel opened (receiver)");
+          dataChannel.onmessage = e => {
+              console.log("Received kick event: " + e.data);
+              simulateKick(e.data); // Call simulateKick with the received data
+          };
       };
 
       // Handle the offer from the URL
       const offer = new URLSearchParams(window.location.search).get('offer');
       if (offer) {
-        console.log("🟢 Response mode: Applying offer...");
-        const offerDesc = decompressSDP(offer);
-        await peerConnection.setRemoteDescription(offerDesc);
+          console.log("🟢 Response mode: Applying offer...");
+          const offerDesc = decompressSDP(offer);
+          await peerConnection.setRemoteDescription(offerDesc);
 
-        const answerDesc = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answerDesc);
+          const answerDesc = await peerConnection.createAnswer();
+          await peerConnection.setLocalDescription(answerDesc);
 
-        // Construct the answer URL and display it
-        const compressedAnswer = compressSDP(answerDesc);
-        const answerUrl = `${window.location.origin}?answer=${compressedAnswer}`;
-        updateShareableURL('answer', answerUrl);
-        console.log("Answer generated. Share this answer URL:", answerUrl);
+          // Construct the answer URL and display it
+          const compressedAnswer = compressSDP(answerDesc);
+          const answerUrl = `${window.location.origin}?answer=${compressedAnswer}`;
+          updateShareableURL('answer', answerUrl);
+          console.log("Answer generated. Share this answer URL:", answerUrl);
       }
     }
 
@@ -247,5 +231,4 @@
     };
   </script>
 </body>
-
 </html>

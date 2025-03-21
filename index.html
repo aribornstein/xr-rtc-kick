@@ -199,13 +199,13 @@
     }
 
     function decompressSDP(str) {
-      try {
-        const decodedStr = decodeURIComponent(str); // Fix URL encoding issue
-        return JSON.parse(pako.inflate(Uint8Array.from(atob(decodedStr), c => c.charCodeAt(0)), { to: 'string' }));
-      } catch (error) {
-        console.error("Error decoding SDP:", error);
-        return null;
-      }
+        try {
+            const decodedStr = decodeURIComponent(str); // Fix URL encoding issue
+            return JSON.parse(pako.inflate(Uint8Array.from(atob(decodedStr), c => c.charCodeAt(0)), { to: 'string' }));
+        } catch (error) {
+            console.error("Error decoding SDP:", error);
+            return null;
+        }
     }
 
     function getQueryParam(name) {
