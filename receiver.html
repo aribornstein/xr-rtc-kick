@@ -161,9 +161,7 @@
     }
 
     function updateShareableURL(param, value) {
-      const url = new URL(window.location.href);
-      url.search = `?${param}=${value}`;
-      document.getElementById('shareableUrl').value = url.toString();
+      document.getElementById('shareableUrl').value = value;
     }
 
     async function initializeReceiver() {
@@ -191,15 +189,6 @@
           };
       };
 
-      // Handle the answer from the URL
-      const answer = new URLSearchParams(window.location.search).get('answer');
-      if (answer) {
-          console.log("🟢 Response mode: Applying answer...");
-          const answerDesc = decompressSDP(answer);
-          await peerConnection.setRemoteDescription(answerDesc);
-          updateShareableURL('answer', answer); // Update the shareable URL with the answer
-      }
-
       // Handle the offer from the URL
       const offer = new URLSearchParams(window.location.search).get('offer');
       if (offer) {
@@ -212,7 +201,7 @@
 
           // Construct the answer URL and display it
           const compressedAnswer = compressSDP(answerDesc);
-          const answerUrl = `${window.location.href.split('?')[0]}?answer=${compressedAnswer}`;
+          const answerUrl = `${window.location.origin}?answer=${compressedAnswer}`;
           updateShareableURL('answer', answerUrl);
           console.log("Answer generated. Share this answer URL:", answerUrl);
       }
