@@ -203,8 +203,7 @@
     }
 
     function updateShareableURL(param, value) {
-        const url = new URL(window.location.href);
-        url.search = `?${param}=${value}`;
+        const url = new URL(value); // Treat the value as a complete URL
         document.getElementById('shareableUrl').value = url.toString();
     }
 
