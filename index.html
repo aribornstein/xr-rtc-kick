@@ -33,13 +33,16 @@
   <p id="connectionStatus">Connecting...</p>
   
   <script type="module">
-    import { drawSkeleton, drawKeypoints } from './js/poseDetection.js';
-    import { KickDetector } from './js/kickDetection.js';
-    import { setupInitiator, handleResponseMode, pollForAnswer } from './js/webrtc.js'; // Updated webrtc module
+    // Import functions and classes from poseDetection.js.
+    import { drawSkeleton, drawKeypoints, FootState, verticalRef, detectKick } from './js/poseDetection.js';
+    import { setupInitiator, handleResponseMode, pollForAnswer } from './js/webrtc.js';
 
     let video, canvas, ctx, detector;
     const statusEl = document.getElementById('status');
-    const kickDetector = new KickDetector();
+    
+    // Instantiate state for left and right feet.
+    const leftFoot = new FootState();
+    const rightFoot = new FootState();
     let dataChannel = null;
     
     // Create the RTCPeerConnection.
@@ -48,16 +51,15 @@
     async function initWebRTC() {
       const urlParams = new URLSearchParams(window.location.search);
       
-      // If an answer is provided, we're in response mode.
+      // If an answer is provided, store it and display a closing message.
       if (urlParams.has('answer')) {
         localStorage.setItem('localAnswer', urlParams.get('answer'));
         document.body.innerHTML = '<p>You can now close this tab.</p>';
         return;
-      }  else {
+      } else {
         // Otherwise, create an offer as the initiator.
         const { dc } = await setupInitiator(pc);
         dataChannel = dc;
-        
         // Start polling for an answer in localStorage.
         pollForAnswer(pc);
       }
@@ -80,12 +82,30 @@
       statusEl.textContent = 'Detection Started';
     }
     
-    // Listen for kick events and forward them via WebRTC.
+    // Listen for kick events dispatched by detectKick and forward them via WebRTC.
     document.addEventListener('kickEvent', e => {
       if (dataChannel && dataChannel.readyState === 'open') {
         dataChannel.send(e.detail);
       }
     });
+    
+    // Process a pose by drawing and detecting kicks.
+    function processPose(pose) {
+      const scaleX = canvas.width / video.videoWidth;
+      const scaleY = canvas.height / video.videoHeight;
+      
+      drawSkeleton(pose, ctx, scaleX, scaleY);
+      drawKeypoints(pose, ctx, scaleX, scaleY);
+      
+      // Compute vertical reference for kick detection.
+      const vRef = verticalRef(pose);
+      const kpMap = {};
+      pose.keypoints.forEach(kp => { kpMap[kp.name] = kp; });
+      
+      // Process kick detection for left and right foot.
+      detectKick(leftFoot, kpMap['left_hip'], kpMap['left_ankle'], vRef, 'Left', ctx, null);
+      detectKick(rightFoot, kpMap['right_hip'], kpMap['right_ankle'], vRef, 'Right', ctx, null);
+    }
     
     async function detect() {
       requestAnimationFrame(detect);
@@ -93,15 +113,7 @@
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       if (!poses[0]) return;
-      const pose = poses[0];
-      const scaleX = canvas.width / video.videoWidth;
-      const scaleY = canvas.height / video.videoHeight;
-      
-      drawSkeleton(pose, ctx, scaleX, scaleY);
-      drawKeypoints(pose, ctx, scaleX, scaleY);
-      
-      // Let the kick detector process the pose.
-      kickDetector.processPose(pose);
+      processPose(poses[0]);
     }
     
     document.getElementById('copyUrlButton').addEventListener('click', function () {
