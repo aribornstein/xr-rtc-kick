@@ -161,7 +161,11 @@
     }
 
     function updateShareableURL(param, value) {
-      document.getElementById('shareableUrl').value = value;
+      const url = new URL(window.location.href);
+      const pathSegments = url.pathname.split('/');
+      const rootDirectory = url.origin + pathSegments.slice(0, pathSegments.length - 1).join('/') + '/';
+      const shareableURL = rootDirectory + '?' + param + '=' + value;
+      document.getElementById('shareableUrl').value = shareableURL;
     }
 
     async function initializeReceiver() {

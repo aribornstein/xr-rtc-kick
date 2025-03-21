@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <title>Improved Pose & Kick Detection</title>
@@ -18,31 +19,38 @@
       background: #f3f3f3;
       font-family: sans-serif;
     }
+
     #videoContainer {
       position: relative;
       display: inline-block;
     }
-    video, canvas {
+
+    video,
+    canvas {
       width: 640px;
       height: 480px;
       border: 1px solid #aaa;
     }
+
     canvas {
       position: absolute;
       top: 0;
       left: 0;
       pointer-events: none;
     }
+
     #status {
       margin: 10px 0;
       font-weight: bold;
     }
+
     #offer {
       width: 100%;
       margin-bottom: 10px;
     }
   </style>
 </head>
+
 <body>
   <h1>Enhanced Kick Detection with MoveNet</h1>
   <p id="status">Initializing...</p>
@@ -53,9 +61,9 @@
   </div>
 
   <div id="shareableUrlArea">
-        <p><strong>Shareable URL</strong></p>
-        <input type="text" id="shareableUrl" readonly />
-        <button id="copyUrlButton">Copy URL</button>
+    <p><strong>Shareable URL</strong></p>
+    <input type="text" id="shareableUrl" readonly />
+    <button id="copyUrlButton">Copy URL</button>
   </div>
 
   <script>
@@ -68,12 +76,12 @@
     const BASELINE_WINDOW_SIZE = 30;
 
     const connections = [
-      ['nose', 'left_eye'], ['nose', 'right_eye'], ['left_eye', 'left_ear'], 
+      ['nose', 'left_eye'], ['nose', 'right_eye'], ['left_eye', 'left_ear'],
       ['right_eye', 'right_ear'], ['left_shoulder', 'right_shoulder'],
       ['left_shoulder', 'left_elbow'], ['left_elbow', 'left_wrist'],
       ['right_shoulder', 'right_elbow'], ['right_elbow', 'right_wrist'],
-      ['left_hip', 'right_hip'], ['left_hip', 'left_knee'], 
-      ['left_knee', 'left_ankle'], ['right_hip', 'right_knee'], 
+      ['left_hip', 'right_hip'], ['left_hip', 'left_knee'],
+      ['left_knee', 'left_ankle'], ['right_hip', 'right_knee'],
       ['right_knee', 'right_ankle']
     ];
 
@@ -88,7 +96,7 @@
       updateBaseline(diff) {
         this.baselineWindow.push(diff);
         if (this.baselineWindow.length > BASELINE_WINDOW_SIZE) this.baselineWindow.shift();
-        this.baselineDiff = this.baselineWindow.reduce((a,b) => a+b)/this.baselineWindow.length;
+        this.baselineDiff = this.baselineWindow.reduce((a, b) => a + b) / this.baselineWindow.length;
       }
       triggerCooldown() {
         this.cooldown = true;
@@ -108,7 +116,7 @@
       const nose = pose.keypoints.find(k => k.name === 'nose');
       const hips = ['left_hip', 'right_hip'].map(name => pose.keypoints.find(k => k.name === name));
       if (hips.some(kp => kp.score < 0.3) || nose.score < 0.3) return Math.PI / 2;
-      const midHip = { x: (hips[0].x + hips[1].x)/2, y: (hips[0].y + hips[1].y)/2 };
+      const midHip = { x: (hips[0].x + hips[1].x) / 2, y: (hips[0].y + hips[1].y) / 2 };
       return Math.atan2(midHip.y - nose.y, midHip.x - nose.x);
     }
 
@@ -183,30 +191,30 @@
     let dc = null;
 
     function compressSDP(desc) {
-        const json = JSON.stringify(desc);
-        const compressed = pako.deflate(json, { to: 'string' });
-        return encodeURIComponent(btoa(String.fromCharCode.apply(null, compressed))); // Ensure URL-safe encoding
+      const json = JSON.stringify(desc);
+      const compressed = pako.deflate(json, { to: 'string' });
+      return encodeURIComponent(btoa(String.fromCharCode.apply(null, compressed))); // Ensure URL-safe encoding
     }
 
     function decompressSDP(str) {
-        try {
-            const decodedStr = decodeURIComponent(str); // Fix URL encoding issue
-            return JSON.parse(pako.inflate(Uint8Array.from(atob(decodedStr), c => c.charCodeAt(0)), { to: 'string' }));
-        } catch (error) {
-            console.error("Error decoding SDP:", error);
-            return null;
-        }
+      try {
+        const decodedStr = decodeURIComponent(str); // Fix URL encoding issue
+        return JSON.parse(pako.inflate(Uint8Array.from(atob(decodedStr), c => c.charCodeAt(0)), { to: 'string' }));
+      } catch (error) {
+        console.error("Error decoding SDP:", error);
+        return null;
+      }
     }
 
     function getQueryParam(name) {
-        return new URLSearchParams(window.location.search).get(name);
+      return new URLSearchParams(window.location.search).get(name);
     }
 
     function updateShareableURL(param, value) {
-        document.getElementById('shareableUrl').value = value;
+      document.getElementById('shareableUrl').value = value;
     }
 
-    document.getElementById('copyUrlButton').addEventListener('click', function() {
+    document.getElementById('copyUrlButton').addEventListener('click', function () {
       const shareableUrl = document.getElementById('shareableUrl');
       shareableUrl.select();
       shareableUrl.setSelectionRange(0, 99999); // For mobile devices
@@ -219,18 +227,18 @@
       pc = new RTCPeerConnection(configuration);
 
       pc.onicecandidate = e => {
-          if (!e.candidate) {
-              const compressed = compressSDP(pc.localDescription);
-              const receiverUrl = `${window.location.href.split('?')[0]}receiver.html?offer=${compressed}`;
-              updateShareableURL('offer', receiverUrl);
-              console.log("Share this offer URL:", receiverUrl);
-          }
+        if (!e.candidate) {
+          const compressed = compressSDP(pc.localDescription);
+          const receiverUrl = `${window.location.href.split('?')[0]}receiver.html?offer=${compressed}`;
+          updateShareableURL('offer', receiverUrl);
+          console.log("Share this offer URL:", receiverUrl);
+        }
       };
 
       pc.onconnectionstatechange = () => {
-          if (pc.connectionState === 'connected') {
-              console.log("✅ Connection established!");
-          }
+        if (pc.connectionState === 'connected') {
+          console.log("✅ Connection established!");
+        }
       };
 
       dc = pc.createDataChannel("kick-channel");
@@ -241,17 +249,30 @@
       await pc.setLocalDescription(offerDesc);
 
       // Retriever Mode (if offer is present in the URL)
-      const offer = getQueryParam('offer');
-      if (offer) {
-          console.log("🟡 Retriever mode: Received offer, generating answer...");
+
+      if (getQueryParam('answer')) {
+        /** RESPONSE MODE **/
+        const answer = getQueryParam('answer');
+        console.log("🟢 Response mode: Storing answer and waiting for initiator...");
+        localStorage.setItem('localAnswer', answer);
+        document.body.innerHTML = '<p>You can now close this tab.</p>';
+      }
+      else {
+        /** INITIATOR MODE **/
+        const offer = getQueryParam('offer');
+        if (offer) {
+          console.log("🟢 Initiator mode: Applying offer...");
           const offerDesc = decompressSDP(offer);
           await pc.setRemoteDescription(offerDesc);
 
           const answerDesc = await pc.createAnswer();
           await pc.setLocalDescription(answerDesc);
-          const compressedAnswer = compressSDP(answerDesc);
-          updateShareableURL('answer', compressedAnswer);
-          console.log("🟡 Answer generated. Share this answer URL:", window.location.href);
+
+          const compressed = compressSDP(pc.localDescription);
+          const receiverUrl = `${window.location.href.split('?')[0]}receiver.html?answer=${compressed}`;
+          updateShareableURL('answer', receiverUrl);
+          console.log("Share this answer URL:", receiverUrl);
+        }
       }
     }
 
@@ -259,7 +280,7 @@
       video = document.getElementById('video');
       canvas = document.getElementById('overlay');
       ctx = canvas.getContext('2d');
-      video.srcObject = await navigator.mediaDevices.getUserMedia({video: true});
+      video.srcObject = await navigator.mediaDevices.getUserMedia({ video: true });
       await new Promise(r => video.onloadedmetadata = () => { video.play(); r(); });
 
       detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet);
@@ -292,4 +313,5 @@
     window.onload = init;
   </script>
 </body>
+
 </html>
