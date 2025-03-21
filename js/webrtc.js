@@ -1,23 +1,20 @@
 // js/webrtc.js
-
 import { compressSDP, decompressSDP, updateShareableURL } from './utils.js';
-
-const configuration = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
 export async function setupInitiator(pc) {
   const dc = pc.createDataChannel("kick-channel");
   dc.onopen = () => console.log("Data channel opened");
   dc.onmessage = e => console.log("Message from receiver:", e.data);
-
+  
   pc.onicecandidate = e => {
     if (!e.candidate) {
       const compressed = compressSDP(pc.localDescription);
-      const receiverUrl = `${window.location.href.split('?')[0]}receiver.html?offer=${compressed}`;
+      const receiverUrl = `${window.location.href.split('?')[0]}retriever.html?offer=${compressed}`;
       updateShareableURL('offer', receiverUrl);
       console.log("Share this offer URL:", receiverUrl);
     }
   };
-
+  
   pc.onconnectionstatechange = () => {
     if (pc.connectionState === 'connected') {
       console.log("✅ Connection established!");
@@ -26,10 +23,10 @@ export async function setupInitiator(pc) {
       document.getElementById('connectionStatus').textContent = 'Connecting...';
     }
   };
-
+  
   const offerDesc = await pc.createOffer();
   await pc.setLocalDescription(offerDesc);
-  return { pc, dc };
+  return { dc };
 }
 
 export async function handleResponseMode(pc, offerParam) {
@@ -37,9 +34,8 @@ export async function handleResponseMode(pc, offerParam) {
   await pc.setRemoteDescription(offerDesc);
   const answerDesc = await pc.createAnswer();
   await pc.setLocalDescription(answerDesc);
-  // For initiator, update URL if needed
   const compressed = compressSDP(pc.localDescription);
-  updateShareableURL('offer', `${window.location.href.split('?')[0]}receiver.html?offer=${compressed}`);
+  updateShareableURL('offer', `${window.location.href.split('?')[0]}retriever.html?offer=${compressed}`);
 }
 
 export async function setupResponder(pc) {
@@ -63,13 +59,12 @@ export async function setupResponder(pc) {
     dataChannel.onopen = () => console.log("Data channel opened (receiver)");
     dataChannel.onmessage = e => {
       console.log("Received kick event:", e.data);
-      // You may want to trigger an event for visualization here.
       document.dispatchEvent(new CustomEvent('kickEvent', { detail: e.data }));
     };
   };
 
-  const params = new URLSearchParams(window.location.search);
-  const offer = params.get('offer');
+  const urlParams = new URLSearchParams(window.location.search);
+  const offer = urlParams.get('offer');
   if (offer) {
     const offerDesc = decompressSDP(offer);
     await pc.setRemoteDescription(offerDesc);
@@ -79,4 +74,32 @@ export async function setupResponder(pc) {
     updateShareableURL('answer', compressedAnswer);
     console.log("Answer generated. Share this answer URL.");
   }
+}
+
+// Poll for an answer stored in localStorage.
+export async function pollForAnswer(pc) {
+  const checkAnswer = async () => {
+    const storedAnswer = localStorage.getItem('localAnswer');
+    if (storedAnswer) {
+      console.log("✅ Found answer in localStorage!");
+      localStorage.removeItem('localAnswer');
+      const answerDesc = decompressSDP(storedAnswer);
+      if (answerDesc) {
+        try {
+          await pc.setRemoteDescription(answerDesc);
+          console.log("Remote description set from stored answer.");
+          document.getElementById('connectionStatus').textContent = '✅ Connection established!';
+        } catch (e) {
+          console.error("Error applying stored answer:", e);
+          document.getElementById('connectionStatus').textContent = '❌ Connection failed!';
+        }
+      } else {
+        console.error("Failed to decompress SDP answer from localStorage.");
+        document.getElementById('connectionStatus').textContent = '❌ Connection failed!';
+      }
+    } else {
+      setTimeout(checkAnswer, 3000);
+    }
+  };
+  checkAnswer();
 }

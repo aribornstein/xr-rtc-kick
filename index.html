@@ -1,6 +1,5 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8">
   <title>Enhanced Kick Detection</title>
@@ -11,91 +10,59 @@
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
   <style>
-    body {
-      margin: 0;
-      padding: 0;
-      text-align: center;
-      background: #f3f3f3;
-      font-family: sans-serif;
-    }
-
-    #videoContainer {
-      position: relative;
-      display: inline-block;
-    }
-
-    video,
-    canvas {
-      width: 640px;
-      height: 480px;
-      border: 1px solid #aaa;
-    }
-
-    canvas {
-      position: absolute;
-      top: 0;
-      left: 0;
-      pointer-events: none;
-    }
-
-    #status {
-      margin: 10px 0;
-      font-weight: bold;
-    }
-
-    #shareableUrlArea {
-      margin-top: 10px;
-    }
+    body { margin: 0; padding: 0; text-align: center; background: #f3f3f3; font-family: sans-serif; }
+    #videoContainer { position: relative; display: inline-block; }
+    video, canvas { width: 640px; height: 480px; border: 1px solid #aaa; }
+    canvas { position: absolute; top: 0; left: 0; pointer-events: none; }
+    #status { margin: 10px 0; font-weight: bold; }
+    #shareableUrlArea { margin-top: 10px; }
   </style>
 </head>
-
 <body>
   <h1>Enhanced Kick Detection with MoveNet</h1>
   <p id="status">Initializing...</p>
-
   <div id="videoContainer">
     <video id="video" autoplay playsinline muted></video>
     <canvas id="overlay"></canvas>
   </div>
-
   <div id="shareableUrlArea">
     <p><strong>Shareable URL</strong></p>
     <input type="text" id="shareableUrl" readonly />
     <button id="copyUrlButton">Copy URL</button>
   </div>
-
   <p id="connectionStatus">Connecting...</p>
-
+  
   <script type="module">
-    // Import our refactored modules
-    import { setupInitiator, handleResponseMode } from './js/webrtc.js';
-    import { FootState, verticalRef, detectKick, drawSkeleton, drawKeypoints } from './js/poseDetection.js';
+    import { drawSkeleton, drawKeypoints } from './js/poseDetection.js';
+    import { KickDetector } from './js/kickDetection.js';
+    import { setupInitiator, handleResponseMode, pollForAnswer } from './js/webrtc.js'; // Updated webrtc module
 
     let video, canvas, ctx, detector;
     const statusEl = document.getElementById('status');
-    const leftFoot = new FootState();
-    const rightFoot = new FootState();
+    const kickDetector = new KickDetector();
     let dataChannel = null;
-
-    // Initialize WebRTC for sending kick events.
+    
+    // Create the RTCPeerConnection.
     const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    
     async function initWebRTC() {
       const urlParams = new URLSearchParams(window.location.search);
-      // If an answer is provided in the URL, we're in response mode.
+      
+      // If an answer is provided, we're in response mode.
       if (urlParams.has('answer')) {
         localStorage.setItem('localAnswer', urlParams.get('answer'));
         document.body.innerHTML = '<p>You can now close this tab.</p>';
         return;
-      } else if (urlParams.has('offer')) {
-        // In initiator mode, apply the offer and create an answer.
-        await handleResponseMode(pc, urlParams.get('offer'));
-      } else {
-        // Otherwise, create an offer.
+      }  else {
+        // Otherwise, create an offer as the initiator.
         const { dc } = await setupInitiator(pc);
         dataChannel = dc;
+        
+        // Start polling for an answer in localStorage.
+        pollForAnswer(pc);
       }
     }
-
+    
     async function initVideo() {
       video = document.getElementById('video');
       canvas = document.getElementById('overlay');
@@ -107,32 +74,36 @@
         console.error("Error accessing video:", error);
       }
     }
-
+    
     async function initPoseDetection() {
       detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet);
       statusEl.textContent = 'Detection Started';
     }
-
+    
+    // Listen for kick events and forward them via WebRTC.
+    document.addEventListener('kickEvent', e => {
+      if (dataChannel && dataChannel.readyState === 'open') {
+        dataChannel.send(e.detail);
+      }
+    });
+    
     async function detect() {
       requestAnimationFrame(detect);
       const poses = await detector.estimatePoses(video);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
       if (!poses[0]) return;
       const pose = poses[0];
-      const kpMap = {};
-      pose.keypoints.forEach(kp => { kpMap[kp.name] = kp; });
       const scaleX = canvas.width / video.videoWidth;
       const scaleY = canvas.height / video.videoHeight;
+      
       drawSkeleton(pose, ctx, scaleX, scaleY);
       drawKeypoints(pose, ctx, scaleX, scaleY);
-      const vRef = verticalRef(pose);
-
-      detectKick(leftFoot, kpMap['left_hip'], kpMap['left_ankle'], vRef, 'Left', ctx, dataChannel);
-      detectKick(rightFoot, kpMap['right_hip'], kpMap['right_ankle'], vRef, 'Right', ctx, dataChannel);
+      
+      // Let the kick detector process the pose.
+      kickDetector.processPose(pose);
     }
-
+    
     document.getElementById('copyUrlButton').addEventListener('click', function () {
       const shareableUrl = document.getElementById('shareableUrl');
       shareableUrl.select();
@@ -140,22 +111,15 @@
       document.execCommand('copy');
       alert('URL copied to clipboard!');
     });
-
-    document.addEventListener('kickEvent', e => {
-      // For example, forward the event over WebRTC if dataChannel exists.
-      if (dataChannel && dataChannel.readyState === 'open') {
-        dataChannel.send(e.detail);
-      }
-    });
+    
     async function init() {
       await initWebRTC();
       await initVideo();
       await initPoseDetection();
       detect();
     }
-
+    
     window.onload = init;
   </script>
 </body>
-
 </html>
