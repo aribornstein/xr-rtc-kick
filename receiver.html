@@ -154,6 +154,12 @@
         }
     }
 
+    function compressSDP(desc) {
+        const json = JSON.stringify(desc);
+        const compressed = pako.deflate(json, { to: 'string' });
+        return encodeURIComponent(btoa(String.fromCharCode.apply(null, compressed))); // Ensure URL-safe encoding
+    }
+
     function updateShareableURL(param, value) {
       const url = new URL(window.location.href);
       url.search = `?${param}=${value}`;
