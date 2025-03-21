@@ -1,16 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8">
-  <title>Improved Pose & Kick Detection</title>
+  <title>Enhanced Kick Detection</title>
   <!-- TensorFlow.js and Pose Detection libraries -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
-
   <style>
     body {
       margin: 0;
@@ -19,38 +17,31 @@
       background: #f3f3f3;
       font-family: sans-serif;
     }
-
     #videoContainer {
       position: relative;
       display: inline-block;
     }
-
     video,
     canvas {
       width: 640px;
       height: 480px;
       border: 1px solid #aaa;
     }
-
     canvas {
       position: absolute;
       top: 0;
       left: 0;
       pointer-events: none;
     }
-
     #status {
       margin: 10px 0;
       font-weight: bold;
     }
-
-    #offer {
-      width: 100%;
-      margin-bottom: 10px;
+    #shareableUrlArea {
+      margin-top: 10px;
     }
   </style>
 </head>
-
 <body>
   <h1>Enhanced Kick Detection with MoveNet</h1>
   <p id="status">Initializing...</p>
@@ -68,259 +59,51 @@
 
   <p id="connectionStatus">Connecting...</p>
 
-  <script>
+  <script type="module">
+    // Import our refactored modules
+    import { setupInitiator, handleResponseMode } from './js/webrtc.js';
+    import { FootState, verticalRef, detectKick, drawSkeleton, drawKeypoints } from './js/poseDetection.js';
+
     let video, canvas, ctx, detector;
     const statusEl = document.getElementById('status');
-
-    const MIN_ANGLE_DIFF = 0.3;
-    const PEAK_DROP_RATIO = 0.8;
-    const COOLDOWN_TIME = 300;
-    const BASELINE_WINDOW_SIZE = 30;
-
-    const connections = [
-      ['nose', 'left_eye'], ['nose', 'right_eye'], ['left_eye', 'left_ear'],
-      ['right_eye', 'right_ear'], ['left_shoulder', 'right_shoulder'],
-      ['left_shoulder', 'left_elbow'], ['left_elbow', 'left_wrist'],
-      ['right_shoulder', 'right_elbow'], ['right_elbow', 'right_wrist'],
-      ['left_hip', 'right_hip'], ['left_hip', 'left_knee'],
-      ['left_knee', 'left_ankle'], ['right_hip', 'right_knee'],
-      ['right_knee', 'right_ankle']
-    ];
-
-    class FootState {
-      constructor() {
-        this.state = 'waiting';
-        this.baselineDiff = null;
-        this.baselineWindow = [];
-        this.maxDiff = 0;
-        this.cooldown = false;
-      }
-      updateBaseline(diff) {
-        this.baselineWindow.push(diff);
-        if (this.baselineWindow.length > BASELINE_WINDOW_SIZE) this.baselineWindow.shift();
-        this.baselineDiff = this.baselineWindow.reduce((a, b) => a + b) / this.baselineWindow.length;
-      }
-      triggerCooldown() {
-        this.cooldown = true;
-        setTimeout(() => this.cooldown = false, COOLDOWN_TIME);
-      }
-    }
-
     const leftFoot = new FootState();
     const rightFoot = new FootState();
+    let dataChannel = null;
 
-    function angleDiff(a, b) {
-      let diff = a - b;
-      return Math.abs(Math.atan2(Math.sin(diff), Math.cos(diff)));
-    }
-
-    function verticalRef(pose) {
-      const nose = pose.keypoints.find(k => k.name === 'nose');
-      const hips = ['left_hip', 'right_hip'].map(name => pose.keypoints.find(k => k.name === name));
-      if (hips.some(kp => kp.score < 0.3) || nose.score < 0.3) return Math.PI / 2;
-      const midHip = { x: (hips[0].x + hips[1].x) / 2, y: (hips[0].y + hips[1].y) / 2 };
-      return Math.atan2(midHip.y - nose.y, midHip.x - nose.x);
-    }
-
-    function detectKick(foot, hip, ankle, verticalAngle, side) {
-      if (hip.score < 0.3 || ankle.score < 0.3 || foot.cooldown) return;
-      const legAngle = Math.atan2(ankle.y - hip.y, ankle.x - hip.x);
-      const diff = angleDiff(legAngle, verticalAngle);
-      if (foot.baselineDiff === null) foot.updateBaseline(diff);
-
-      foot.updateBaseline(diff);
-
-      if (foot.state === 'waiting' && diff > foot.baselineDiff + MIN_ANGLE_DIFF) {
-        foot.state = 'extended';
-        foot.maxDiff = diff;
-      } else if (foot.state === 'extended') {
-        if (diff > foot.maxDiff) foot.maxDiff = diff;
-        if (diff < foot.maxDiff * PEAK_DROP_RATIO) {
-          indicateKick(side);
-          // Kick detection indicated (WebRTC removed)
-          foot.triggerCooldown();
-          foot.state = 'retracting';
-        }
-      } else if (foot.state === 'retracting' && diff < foot.baselineDiff + MIN_ANGLE_DIFF / 2) {
-        foot.state = 'waiting';
-      }
-    }
-
-    function indicateKick(side) {
-      ctx.fillStyle = side === 'Left' ? 'red' : 'blue';
-      ctx.font = 'bold 30px Arial';
-      ctx.textAlign = side === 'Left' ? 'left' : 'right';
-      ctx.textBaseline = 'top';
-      ctx.fillText(`${side} Kick!`, side === 'Left' ? 10 : canvas.width - 10, 10);
-
-      // Send kick data over the data channel
-      if (dc && dc.readyState === 'open') {
-        const kickEvent = side === 'Left' ? "left_kick" : "right_kick";
-        dc.send(kickEvent);
-      }
-    }
-
-    function drawSkeleton(pose, scaleX, scaleY) {
-      ctx.strokeStyle = 'green';
-      ctx.lineWidth = 3;
-      connections.forEach(([kp1, kp2]) => {
-        const keypoint1 = pose.keypoints.find(kp => kp.name === kp1);
-        const keypoint2 = pose.keypoints.find(kp => kp.name === kp2);
-        if (keypoint1 && keypoint2 && keypoint1.score > 0.3 && keypoint2.score > 0.3) {
-          ctx.beginPath();
-          ctx.moveTo(keypoint1.x * scaleX, keypoint1.y * scaleY);
-          ctx.lineTo(keypoint2.x * scaleX, keypoint2.y * scaleY);
-          ctx.stroke();
-        }
-      });
-    }
-
-    function drawKeypoints(pose, scaleX, scaleY) {
-      for (const keypoint of pose.keypoints) {
-        if (keypoint.score > 0.3) {
-          ctx.font = 'bold 7px Arial';
-          ctx.beginPath();
-          ctx.arc(keypoint.x * scaleX, keypoint.y * scaleY, 5, 0, 2 * Math.PI);
-          ctx.fillStyle = 'red';
-          ctx.fill();
-          ctx.fillStyle = 'white';
-          ctx.fillText(keypoint.name, keypoint.x * scaleX + 6, keypoint.y * scaleY + 2);
-        }
-      }
-    }
-
-    let pc = null;
-    let dc = null;
-
-    function compressSDP(desc) {
-      const json = JSON.stringify(desc);
-      const compressed = pako.deflate(json, { to: 'string' });
-      return encodeURIComponent(btoa(String.fromCharCode.apply(null, compressed))); // Ensure URL-safe encoding
-    }
-
-    function decompressSDP(str) {
-        try {
-            const decodedStr = decodeURIComponent(str); // Fix URL encoding issue
-            return JSON.parse(pako.inflate(Uint8Array.from(atob(decodedStr), c => c.charCodeAt(0)), { to: 'string' }));
-        } catch (error) {
-            console.error("Error decoding SDP:", error);
-            return null;
-        }
-    }
-
-    function getQueryParam(name) {
-      return new URLSearchParams(window.location.search).get(name);
-    }
-
-    function updateShareableURL(param, value) {
-      document.getElementById('shareableUrl').value = value;
-    }
-
-    document.getElementById('copyUrlButton').addEventListener('click', function () {
-      const shareableUrl = document.getElementById('shareableUrl');
-      shareableUrl.select();
-      shareableUrl.setSelectionRange(0, 99999); // For mobile devices
-      document.execCommand('copy');
-      alert('URL copied to clipboard!'); // Optional: provide feedback
-    });
-
-    async function startWebRTC() {
-      const configuration = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
-      pc = new RTCPeerConnection(configuration);
-
-      pc.onicecandidate = e => {
-        if (!e.candidate) {
-          const compressed = compressSDP(pc.localDescription);
-          const receiverUrl = `${window.location.href.split('?')[0]}receiver.html?offer=${compressed}`;
-          updateShareableURL('offer', receiverUrl);
-          console.log("Share this offer URL:", receiverUrl);
-        }
-      };
-
-      pc.onconnectionstatechange = () => {
-        if (pc.connectionState === 'connected') {
-          console.log("✅ Connection established!");
-          document.getElementById('connectionStatus').textContent = '✅ Connection established!';
-        } else {
-          document.getElementById('connectionStatus').textContent = 'Connecting...';
-        }
-      };
-
-      dc = pc.createDataChannel("kick-channel");
-      dc.onopen = () => console.log("Data channel opened");
-      dc.onmessage = e => console.log("Message from receiver: " + e.data);
-
-      const offerDesc = await pc.createOffer();
-      await pc.setLocalDescription(offerDesc);
-
-      // Retriever Mode (if offer is present in the URL)
-
-      if (getQueryParam('answer')) {
-        /** RESPONSE MODE **/
-        const answer = getQueryParam('answer');
-        console.log("🟢 Response mode: Storing answer and waiting for initiator...");
-        localStorage.setItem('localAnswer', answer);
+    // Initialize WebRTC for sending kick events.
+    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    async function initWebRTC() {
+      const urlParams = new URLSearchParams(window.location.search);
+      // If an answer is provided in the URL, we're in response mode.
+      if (urlParams.has('answer')) {
+        localStorage.setItem('localAnswer', urlParams.get('answer'));
         document.body.innerHTML = '<p>You can now close this tab.</p>';
-        return True;
-      }
-      else {
-        /** INITIATOR MODE **/
-        const offer = getQueryParam('offer');
-        if (offer) {
-          console.log("🟢 Initiator mode: Applying offer...");
-          const offerDesc = decompressSDP(offer);
-          await pc.setRemoteDescription(offerDesc);
-
-          const answerDesc = await pc.createAnswer();
-          await pc.setLocalDescription(answerDesc);
-
-          const compressed = compressSDP(pc.localDescription);
-          const receiverUrl = `${window.location.href.split('?')[0]}receiver.html?offer=${compressed}`;
-          updateShareableURL('offer', receiverUrl);
-          console.log("Share this offer URL:", receiverUrl);
-        }
-        const checkAnswer = async () => {
-          const storedAnswer = localStorage.getItem('localAnswer');
-          if (storedAnswer) {
-            console.log("✅ Found answer in localStorage!");
-            localStorage.removeItem('localAnswer'); // Clear the localStorage
-
-            const answerDesc = decompressSDP(storedAnswer);
-            if (answerDesc) {
-              try {
-                await pc.setRemoteDescription(answerDesc);
-                console.log("Remote description set from stored answer.");
-                document.getElementById('connectionStatus').textContent = '✅ Connection established!';
-              } catch (e) {
-                console.error("Error applying stored answer:", e);
-                document.getElementById('connectionStatus').textContent = '❌ Connection failed!';
-              }
-            } else {
-              console.error("Failed to decompress SDP answer from localStorage.");
-              document.getElementById('connectionStatus').textContent = '❌ Connection failed!';
-            }
-          } else {
-            setTimeout(checkAnswer, 3000); // Check every 3 seconds
-          }
-        };
-        checkAnswer();
+        return;
+      } else if (urlParams.has('offer')) {
+        // In initiator mode, apply the offer and create an answer.
+        await handleResponseMode(pc, urlParams.get('offer'));
+      } else {
+        // Otherwise, create an offer.
+        const { dc } = await setupInitiator(pc);
+        dataChannel = dc;
       }
     }
 
-    async function init() {
-      const answer = await startWebRTC();
-      if (!answer) {
-        video = document.getElementById('video');
-        canvas = document.getElementById('overlay');
-        ctx = canvas.getContext('2d');
+    async function initVideo() {
+      video = document.getElementById('video');
+      canvas = document.getElementById('overlay');
+      ctx = canvas.getContext('2d');
+      try {
         video.srcObject = await navigator.mediaDevices.getUserMedia({ video: true });
-        await new Promise(r => video.onloadedmetadata = () => { video.play(); r(); });
-
-        detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet);
-        statusEl.textContent = 'Detection Started';
-        detect();
+        await new Promise(resolve => video.onloadedmetadata = () => { video.play(); resolve(); });
+      } catch (error) {
+        console.error("Error accessing video:", error);
       }
+    }
 
+    async function initPoseDetection() {
+      detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet);
+      statusEl.textContent = 'Detection Started';
     }
 
     async function detect() {
@@ -335,16 +118,30 @@
       pose.keypoints.forEach(kp => { kpMap[kp.name] = kp; });
       const scaleX = canvas.width / video.videoWidth;
       const scaleY = canvas.height / video.videoHeight;
-      drawSkeleton(pose, scaleX, scaleY);
-      drawKeypoints(pose, scaleX, scaleY);
+      drawSkeleton(pose, ctx, scaleX, scaleY);
+      drawKeypoints(pose, ctx, scaleX, scaleY);
       const vRef = verticalRef(pose);
 
-      detectKick(leftFoot, kpMap['left_hip'], kpMap['left_ankle'], vRef, 'Left');
-      detectKick(rightFoot, kpMap['right_hip'], kpMap['right_ankle'], vRef, 'Right');
+      detectKick(leftFoot, kpMap['left_hip'], kpMap['left_ankle'], vRef, 'Left', ctx, dataChannel);
+      detectKick(rightFoot, kpMap['right_hip'], kpMap['right_ankle'], vRef, 'Right', ctx, dataChannel);
+    }
+
+    document.getElementById('copyUrlButton').addEventListener('click', function () {
+      const shareableUrl = document.getElementById('shareableUrl');
+      shareableUrl.select();
+      shareableUrl.setSelectionRange(0, 99999);
+      document.execCommand('copy');
+      alert('URL copied to clipboard!');
+    });
+
+    async function init() {
+      await initWebRTC();
+      await initVideo();
+      await initPoseDetection();
+      detect();
     }
 
     window.onload = init;
   </script>
 </body>
-
 </html>
