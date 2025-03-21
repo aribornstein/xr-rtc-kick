@@ -218,8 +218,7 @@
 
           // Construct the answer URL and display it
           const compressedAnswer = compressSDP(answerDesc);
-          const answerUrl = `${window.location.origin}?answer=${compressedAnswer}`;
-          updateShareableURL('answer', answerUrl);
+          updateShareableURL('answer', compressedAnswer);
           console.log("Answer generated. Share this answer URL:", answerUrl);
       }
     }
