@@ -55,6 +55,7 @@
   <div id="shareableUrlArea">
         <p><strong>Shareable URL</strong></p>
         <input type="text" id="shareableUrl" readonly />
+        <button id="copyUrlButton">Copy URL</button>
   </div>
 
   <script>
@@ -206,6 +207,14 @@
         url.search = `?${param}=${value}`;
         document.getElementById('shareableUrl').value = url.toString();
     }
+
+    document.getElementById('copyUrlButton').addEventListener('click', function() {
+      const shareableUrl = document.getElementById('shareableUrl');
+      shareableUrl.select();
+      shareableUrl.setSelectionRange(0, 99999); // For mobile devices
+      document.execCommand('copy');
+      alert('URL copied to clipboard!'); // Optional: provide feedback
+    });
 
     async function startWebRTC() {
       const configuration = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
