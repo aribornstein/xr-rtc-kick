@@ -26,7 +26,7 @@ export function compressSDP(desc) {
         const rootDirectory = url.origin + pathSegments.slice(0, pathSegments.length - 1).join('/') + '/';
         const shareableURL = rootDirectory + '?' + param + '=' + value;    
     }
-    document.getElementById('shareableUrl').value = shareableURL;
+    document.getElementById('shareableUrl').value = value;
   }
 
 
