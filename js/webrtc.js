@@ -9,7 +9,7 @@ export async function setupInitiator(pc) {
   pc.onicecandidate = e => {
     if (!e.candidate) {
       const compressed = compressSDP(pc.localDescription);
-      const receiverUrl = `${window.location.href.split('?')[0]}retriever.html?offer=${compressed}`;
+      const receiverUrl = `${window.location.href.split('?')[0]}receiver.html?offer=${compressed}`;
       updateShareableURL('offer', receiverUrl);
       console.log("Share this offer URL:", receiverUrl);
     }

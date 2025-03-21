@@ -20,10 +20,14 @@ export function compressSDP(desc) {
   
   // Updates the shareable URL input field.
   export function updateShareableURL(param, value) {
-    const url = new URL(window.location.href);
-    const pathSegments = url.pathname.split('/');
-    const rootDirectory = url.origin + pathSegments.slice(0, pathSegments.length - 1).join('/') + '/';
-    const shareableURL = rootDirectory + '?' + param + '=' + value;
+    if (!param === 'offer'){
+        const url = new URL(window.location.href);
+        const pathSegments = url.pathname.split('/');
+        const rootDirectory = url.origin + pathSegments.slice(0, pathSegments.length - 1).join('/') + '/';
+        const shareableURL = rootDirectory + '?' + param + '=' + value;    
+    }
     document.getElementById('shareableUrl').value = shareableURL;
   }
+
+
   
