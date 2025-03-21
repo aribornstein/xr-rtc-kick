@@ -78,10 +78,8 @@ function indicateKick(side, ctx, dc) {
   ctx.textBaseline = 'top';
   ctx.fillText(`${side} Kick!`, side === 'Left' ? 10 : ctx.canvas.width - 10, 10);
 
-  // Send kick event via data channel if available.
-  if (dc && dc.readyState === 'open') {
-    dc.send(side === 'Left' ? "left_kick" : "right_kick");
-  }
+  // this shouuld replaced with a eventbus event 
+  document.dispatchEvent(new CustomEvent('kickEvent', { detail: side === 'Left' ? "left_kick" : "right_kick" }));
 }
 
 export function drawSkeleton(pose, ctx, scaleX, scaleY) {

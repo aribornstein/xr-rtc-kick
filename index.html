@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <title>Enhanced Kick Detection</title>
@@ -17,31 +18,37 @@
       background: #f3f3f3;
       font-family: sans-serif;
     }
+
     #videoContainer {
       position: relative;
       display: inline-block;
     }
+
     video,
     canvas {
       width: 640px;
       height: 480px;
       border: 1px solid #aaa;
     }
+
     canvas {
       position: absolute;
       top: 0;
       left: 0;
       pointer-events: none;
     }
+
     #status {
       margin: 10px 0;
       font-weight: bold;
     }
+
     #shareableUrlArea {
       margin-top: 10px;
     }
   </style>
 </head>
+
 <body>
   <h1>Enhanced Kick Detection with MoveNet</h1>
   <p id="status">Initializing...</p>
@@ -134,6 +141,12 @@
       alert('URL copied to clipboard!');
     });
 
+    document.addEventListener('kickEvent', e => {
+      // For example, forward the event over WebRTC if dataChannel exists.
+      if (dataChannel && dataChannel.readyState === 'open') {
+        dataChannel.send(e.detail);
+      }
+    });
     async function init() {
       await initWebRTC();
       await initVideo();
@@ -144,4 +157,5 @@
     window.onload = init;
   </script>
 </body>
+
 </html>
