@@ -16,6 +16,15 @@
       padding: 10px;
       border-radius: 5px;
     }
+    #shareableUrlArea {
+      margin-top: 100px; /* Add margin to move it below controls */
+      position: relative; /* Ensure proper positioning context */
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.8);
+      border-radius: 5px;
+      width: fit-content; /* Adjust width to content */
+      margin-left: 10px; /* Align with the left edge of the controls */
+    }
     textarea, button, label { display: none; }
   </style>
 </head>
@@ -181,6 +190,23 @@
           const answerDesc = decompressSDP(answer);
           await peerConnection.setRemoteDescription(answerDesc);
           updateShareableURL('answer', answer); // Update the shareable URL with the answer
+      }
+
+      // Handle the offer from the URL
+      const offer = new URLSearchParams(window.location.search).get('offer');
+      if (offer) {
+          console.log("🟢 Response mode: Applying offer...");
+          const offerDesc = decompressSDP(offer);
+          await peerConnection.setRemoteDescription(offerDesc);
+
+          const answerDesc = await peerConnection.createAnswer();
+          await peerConnection.setLocalDescription(answerDesc);
+
+          // Construct the answer URL and display it
+          const compressedAnswer = compressSDP(answerDesc);
+          const answerUrl = `${window.location.href.split('?')[0]}?answer=${compressedAnswer}`;
+          updateShareableURL('answer', answerUrl);
+          console.log("Answer generated. Share this answer URL:", answerUrl);
       }
     }
 
