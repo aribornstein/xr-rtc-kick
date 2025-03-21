@@ -66,6 +66,8 @@
     <button id="copyUrlButton">Copy URL</button>
   </div>
 
+  <p id="connectionStatus">Connecting...</p>
+
   <script>
     let video, canvas, ctx, detector;
     const statusEl = document.getElementById('status');
@@ -238,6 +240,9 @@
       pc.onconnectionstatechange = () => {
         if (pc.connectionState === 'connected') {
           console.log("✅ Connection established!");
+          document.getElementById('connectionStatus').textContent = '✅ Connection established!';
+        } else {
+          document.getElementById('connectionStatus').textContent = 'Connecting...';
         }
       };
 
@@ -274,12 +279,37 @@
           updateShareableURL('offer', receiverUrl);
           console.log("Share this offer URL:", receiverUrl);
         }
+        const checkAnswer = async () => {
+          const storedAnswer = localStorage.getItem('localAnswer');
+          if (storedAnswer) {
+            console.log("✅ Found answer in localStorage!");
+            localStorage.removeItem('localAnswer'); // Clear the localStorage
+
+            const answerDesc = decompressSDP(storedAnswer);
+            if (answerDesc) {
+              try {
+                await pc.setRemoteDescription(answerDesc);
+                console.log("Remote description set from stored answer.");
+                document.getElementById('connectionStatus').textContent = '✅ Connection established!';
+              } catch (e) {
+                console.error("Error applying stored answer:", e);
+                document.getElementById('connectionStatus').textContent = '❌ Connection failed!';
+              }
+            } else {
+              console.error("Failed to decompress SDP answer from localStorage.");
+              document.getElementById('connectionStatus').textContent = '❌ Connection failed!';
+            }
+          } else {
+            setTimeout(checkAnswer, 3000); // Check every 3 seconds
+          }
+        };
+        checkAnswer();
       }
     }
 
     async function init() {
       const answer = await startWebRTC();
-      if (!answer){
+      if (!answer) {
         video = document.getElementById('video');
         canvas = document.getElementById('overlay');
         ctx = canvas.getContext('2d');

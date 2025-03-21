@@ -38,6 +38,8 @@
     <button id="copyUrlButton">Copy URL</button>
   </div>
 
+  <p id="connectionStatus">Connecting...</p>
+
   <!-- Three.js for stick figure visualization -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
@@ -189,6 +191,9 @@
       peerConnection.onconnectionstatechange = () => {
           if (peerConnection.connectionState === 'connected') {
               console.log("✅ Connection established!");
+              document.getElementById('connectionStatus').textContent = '✅ Connection established!';
+          } else {
+              document.getElementById('connectionStatus').textContent = 'Connecting...';
           }
       };
 
