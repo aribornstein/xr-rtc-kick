@@ -256,6 +256,7 @@
         console.log("🟢 Response mode: Storing answer and waiting for initiator...");
         localStorage.setItem('localAnswer', answer);
         document.body.innerHTML = '<p>You can now close this tab.</p>';
+        return True;
       }
       else {
         /** INITIATOR MODE **/
@@ -269,25 +270,27 @@
           await pc.setLocalDescription(answerDesc);
 
           const compressed = compressSDP(pc.localDescription);
-          const receiverUrl = `${window.location.href.split('?')[0]}receiver.html?answer=${compressed}`;
-          updateShareableURL('answer', receiverUrl);
-          console.log("Share this answer URL:", receiverUrl);
+          const receiverUrl = `${window.location.href.split('?')[0]}receiver.html?offer=${compressed}`;
+          updateShareableURL('offer', receiverUrl);
+          console.log("Share this offer URL:", receiverUrl);
         }
       }
     }
 
     async function init() {
-      video = document.getElementById('video');
-      canvas = document.getElementById('overlay');
-      ctx = canvas.getContext('2d');
-      video.srcObject = await navigator.mediaDevices.getUserMedia({ video: true });
-      await new Promise(r => video.onloadedmetadata = () => { video.play(); r(); });
+      const answer = await startWebRTC();
+      if (!answer){
+        video = document.getElementById('video');
+        canvas = document.getElementById('overlay');
+        ctx = canvas.getContext('2d');
+        video.srcObject = await navigator.mediaDevices.getUserMedia({ video: true });
+        await new Promise(r => video.onloadedmetadata = () => { video.play(); r(); });
 
-      detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet);
-      statusEl.textContent = 'Detection Started';
+        detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet);
+        statusEl.textContent = 'Detection Started';
+        detect();
+      }
 
-      await startWebRTC();
-      detect();
     }
 
     async function detect() {
