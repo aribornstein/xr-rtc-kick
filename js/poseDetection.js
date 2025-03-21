@@ -1,9 +1,11 @@
-// js/poseDetection.js
-
 const MIN_ANGLE_DIFF = 0.3;
 const PEAK_DROP_RATIO = 0.8;
 const COOLDOWN_TIME = 300;
 const BASELINE_WINDOW_SIZE = 30;
+const MIN_HORIZONTAL_OFFSET = 10; // Adjust based on your coordinate scale
+
+// Global cooldown flag for kicks
+let globalKickCooldown = false;
 
 const connections = [
   ['nose', 'left_eye'], ['nose', 'right_eye'], ['left_eye', 'left_ear'],
@@ -21,16 +23,11 @@ export class FootState {
     this.baselineDiff = null;
     this.baselineWindow = [];
     this.maxDiff = 0;
-    this.cooldown = false;
   }
   updateBaseline(diff) {
     this.baselineWindow.push(diff);
     if (this.baselineWindow.length > BASELINE_WINDOW_SIZE) this.baselineWindow.shift();
     this.baselineDiff = this.baselineWindow.reduce((a, b) => a + b) / this.baselineWindow.length;
-  }
-  triggerCooldown() {
-    this.cooldown = true;
-    setTimeout(() => this.cooldown = false, COOLDOWN_TIME);
   }
 }
 
@@ -48,13 +45,18 @@ export function verticalRef(pose) {
 }
 
 export function detectKick(foot, hip, ankle, verticalAngle, side, ctx, dc) {
-  if (hip.score < 0.3 || ankle.score < 0.3 || foot.cooldown) return;
+  // Return early if low confidence or global cooldown is active.
+  if (hip.score < 0.3 || ankle.score < 0.3 || globalKickCooldown) return;
+  
+  // Directional check: Ensure the correct horizontal displacement.
+  if (side === 'Right' && (ankle.x - hip.x) < MIN_HORIZONTAL_OFFSET) return;
+  if (side === 'Left' && (hip.x - ankle.x) < MIN_HORIZONTAL_OFFSET) return;
+  
   const legAngle = Math.atan2(ankle.y - hip.y, ankle.x - hip.x);
   const diff = angleDiff(legAngle, verticalAngle);
   if (foot.baselineDiff === null) foot.updateBaseline(diff);
-
   foot.updateBaseline(diff);
-
+  
   if (foot.state === 'waiting' && diff > foot.baselineDiff + MIN_ANGLE_DIFF) {
     foot.state = 'extended';
     foot.maxDiff = diff;
@@ -63,12 +65,19 @@ export function detectKick(foot, hip, ankle, verticalAngle, side, ctx, dc) {
     if (diff < foot.maxDiff * PEAK_DROP_RATIO) {
       // Draw or indicate kick
       indicateKick(side, ctx, dc);
-      foot.triggerCooldown();
+      triggerGlobalKickCooldown();
       foot.state = 'retracting';
     }
   } else if (foot.state === 'retracting' && diff < foot.baselineDiff + MIN_ANGLE_DIFF / 2) {
     foot.state = 'waiting';
   }
+}
+
+function triggerGlobalKickCooldown() {
+  globalKickCooldown = true;
+  setTimeout(() => {
+    globalKickCooldown = false;
+  }, COOLDOWN_TIME);
 }
 
 function indicateKick(side, ctx, dc) {
@@ -78,7 +87,7 @@ function indicateKick(side, ctx, dc) {
   ctx.textBaseline = 'top';
   ctx.fillText(`${side} Kick!`, side === 'Left' ? 10 : ctx.canvas.width - 10, 10);
 
-  // this shouuld replaced with a eventbus event 
+  // This should be replaced with an eventbus event if needed.
   document.dispatchEvent(new CustomEvent('kickEvent', { detail: side === 'Left' ? "left_kick" : "right_kick" }));
 }
 
