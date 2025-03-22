@@ -38,6 +38,7 @@
     <p><strong>Shareable URL</strong></p>
     <input type="text" id="shareableUrl" readonly />
     <button id="copyUrlButton">Copy URL</button>
+    <button id="whatsappShareButton">Share on WhatsApp</button>
   </div>
 
   <p id="connectionStatus">Connecting...</p>
@@ -53,6 +54,13 @@
       shareableUrl.setSelectionRange(0, 99999);
       document.execCommand('copy');
       alert('URL copied to clipboard!');
+    });
+
+    document.getElementById('whatsappShareButton').addEventListener('click', function() {
+      const shareableUrl = document.getElementById('shareableUrl').value;
+      const message = "Here is my connection answer: " + shareableUrl;
+      const url = "https://api.whatsapp.com/send?text=" + encodeURIComponent(message);
+      window.open(url, "_blank");
     });
 
     // Initialize Three.js visualization and kick event listener.
